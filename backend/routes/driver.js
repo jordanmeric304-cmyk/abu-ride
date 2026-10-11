@@ -991,65 +991,61 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
 
 
 // ============================================================
-// GET ACTIVE VEHICLES FOR PASSENGERS (Joined with Drivers & Auto-Hides Full Vehicles)
+// GET ACTIVE VEHICLES FOR PASSENGERS
 // ============================================================
 
 router.get('/active-vehicles', authMiddleware, async (req, res) => {
   try {
     const { destination_id } = req.query;
 
-    const { data: vehicles, error } = await supabase
+    // 1. Fetch all active vehicles checked in with a driver
+    const { data: vehicles, error: vehicleError } = await supabase
       .from('vehicles')
-      .select(`
-        id,
-        vehicle_number,
-        is_active,
-        current_driver_id,
-        trips(*),
-        driver_profiles:current_driver_id (
-          user_id,
-          destination_id,
-          users:user_id (
-            id,
-            full_name,
-            email,
-            phone
-          )
-        )
-      `)
+      .select('*')
       .eq('is_active', true)
       .not('current_driver_id', 'is', null);
 
-    if (error) {
-      console.error('Fetch active vehicles error:', error);
+    if (vehicleError) {
+      console.error('Fetch active vehicles error:', vehicleError);
       return res.status(400).json({ success: false, message: 'Could not fetch active vehicles' });
     }
 
-    const formattedVehicles = (vehicles || []).map(vehicle => {
-      const driverProfile = vehicle.driver_profiles;
-      const driverUser = driverProfile?.users;
+    if (!vehicles || vehicles.length === 0) {
+      return res.json({ success: true, vehicles: [] });
+    }
 
-      if (destination_id && Number(driverProfile?.destination_id) !== Number(destination_id)) {
-        return null;
-      }
+    // 2. Extract driver user IDs
+    const driverIds = vehicles.map(v => v.current_driver_id).filter(Boolean);
 
-      const activeTrip = vehicle.trips?.find(trip => trip.completed_at === null);
-      const bookedSeats = activeTrip ? Number(activeTrip.total_booked_seats || 0) : 0;
-      const availableSeats = Math.max(0, 10 - bookedSeats);
+    // 3. Fetch driver profiles and user names directly
+    const { data: driverProfiles } = await supabase
+      .from('driver_profiles')
+      .select('user_id, destination_id, driver_license_number')
+      .in('user_id', driverIds);
 
-      if (availableSeats <= 0) {
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, full_name, email, phone')
+      .in('id', driverIds);
+
+    // 4. Combine data cleanly
+    const formattedVehicles = vehicles.map(vehicle => {
+      const profile = (driverProfiles || []).find(p => p.user_id === vehicle.current_driver_id);
+      const user = (users || []).find(u => u.id === vehicle.current_driver_id);
+
+      // Filter by requested destination if supplied
+      if (destination_id && Number(profile?.destination_id) !== Number(destination_id)) {
         return null;
       }
 
       return {
         vehicle_id: vehicle.id,
-        vehicle_number: vehicle.vehicle_number,
-        driver_id: driverUser?.id || vehicle.current_driver_id,
-        driver_name: driverUser?.full_name || 'Approved Driver',
-        driver_custom_id: `DRV-${driverUser?.id || '000'}`,
-        destination_id: driverProfile?.destination_id || null,
-        destination_name: '',
-        available_seats: availableSeats,
+        vehicle_number: vehicle.vehicle_number || `Vehicle ${vehicle.id}`,
+        driver_id: vehicle.current_driver_id,
+        driver_name: user?.full_name || 'Assigned Driver',
+        driver_custom_id: `DRV-${user?.id || vehicle.current_driver_id}`,
+        destination_id: profile?.destination_id || null,
+        available_seats: 10, // Default seat availability
       };
     }).filter(Boolean);
 
@@ -1059,6 +1055,7 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
     return res.status(500).json({ success: false, message: 'Server error while fetching active vehicles' });
   }
 });
+
 
 
 // ============================================================

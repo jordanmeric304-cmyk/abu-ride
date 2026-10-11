@@ -176,63 +176,53 @@ export default function HomeScreen() {
     }
   };
 
-  const loadDrivers = async (
-    destinationId: number
-  ) => {
+  const loadDrivers = async (destinationId: number) => {
     setLoadingDrivers(true);
     setSelectedDriver(null);
     setDrivers([]);
 
     try {
-      const token =
-        await SecureStore.getItemAsync(
-          'auth_token'
-        );
+      const token = await SecureStore.getItemAsync('auth_token');
 
       const response = await fetch(
         `${API_URL}/api/driver/active-vehicles?destination_id=${destinationId}`,
         {
           headers: {
-            Authorization:
-              `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
 
       const data = await response.json();
 
-      if (data.success) {
-        const mappedVehicles = (data.vehicles || []).map((v: any) => ({
+      if (data.success && data.vehicles) {
+        const mapped = data.vehicles.map((v: any) => ({
           id: v.driver_id || v.vehicle_id,
           driver_id: v.driver_id,
           vehicle_id: v.vehicle_id,
-          full_name: v.driver_name || v.full_name || v.name || `Driver ${v.driver_custom_id || v.driver_id || ''}`,
+          full_name: `${v.vehicle_number} - ${v.driver_name}`,
           phone: null,
           vehicle_number: v.vehicle_number,
-          vehicle_type: `Driver ID: ${v.driver_custom_id || 'Approved'}`,
+          vehicle_type: `Driver: ${v.driver_name}`,
           is_available: true,
-          destination_id: v.destination_id,
-          destination_name: v.destination_name,
+          destination_id: destinationId,
+          destination_name: selectedDestination?.name || '',
           fare: selectedDestination?.fare || 0,
-          available_seats: v.available_seats,
+          available_seats: v.available_seats || 10,
         }));
 
-        setDrivers(mappedVehicles);
+        setDrivers(mapped);
       } else {
         setDrivers([]);
       }
     } catch (error) {
-      console.log(
-        'Available drivers error:',
-        error
-      );
-
+      console.log('Available drivers error:', error);
       setDrivers([]);
     } finally {
       setLoadingDrivers(false);
     }
   };
-
+  
   const selectDestination = (
     destination: Destination
   ) => {

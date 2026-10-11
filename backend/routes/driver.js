@@ -926,7 +926,7 @@ router.get(
 
 
 // ============================================================
-// NEW: GET ALL VEHICLES (01 to 20) FOR DRIVER SELECTION
+// GET ALL VEHICLES (01 to 20) FOR DRIVER SELECTION
 // ============================================================
 
 router.get('/vehicles', authMiddleware, driverOnly, async (req, res) => {
@@ -950,7 +950,7 @@ router.get('/vehicles', authMiddleware, driverOnly, async (req, res) => {
 
 
 // ============================================================
-// NEW: DRIVER SELECTS A VEHICLE (01 to 20)
+// DRIVER SELECTS A VEHICLE (01 to 20)
 // ============================================================
 
 router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
@@ -991,29 +991,69 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
 
 
 // ============================================================
-// NEW: GET ACTIVE VEHICLES FOR PASSENGERS (Auto-Hides Full Vehicles)
+// GET ACTIVE VEHICLES FOR PASSENGERS (Joined with Drivers & Auto-Hides Full Vehicles)
 // ============================================================
 
 router.get('/active-vehicles', authMiddleware, async (req, res) => {
   try {
+    const { destination_id } = req.query;
+
     const { data: vehicles, error } = await supabase
       .from('vehicles')
-      .select('*, trips(*)')
-      .eq('is_active', true);
+      .select(`
+        id,
+        vehicle_number,
+        is_active,
+        current_driver_id,
+        trips(*),
+        driver_profiles:current_driver_id (
+          user_id,
+          destination_id,
+          users:user_id (
+            id,
+            full_name,
+            email,
+            phone
+          )
+        )
+      `)
+      .eq('is_active', true)
+      .not('current_driver_id', 'is', null);
 
     if (error) {
       console.error('Fetch active vehicles error:', error);
       return res.status(400).json({ success: false, message: 'Could not fetch active vehicles' });
     }
 
-    // Filter out vehicles that have reached the 10-seat limit
-    const availableVehicles = vehicles.filter(vehicle => {
-      const activeTrip = vehicle.trips?.find(trip => trip.completed_at === null);
-      const bookedSeats = activeTrip ? activeTrip.total_booked_seats : 0;
-      return bookedSeats < 10;
-    });
+    const formattedVehicles = (vehicles || []).map(vehicle => {
+      const driverProfile = vehicle.driver_profiles;
+      const driverUser = driverProfile?.users;
 
-    return res.json({ success: true, vehicles: availableVehicles });
+      if (destination_id && Number(driverProfile?.destination_id) !== Number(destination_id)) {
+        return null;
+      }
+
+      const activeTrip = vehicle.trips?.find(trip => trip.completed_at === null);
+      const bookedSeats = activeTrip ? Number(activeTrip.total_booked_seats || 0) : 0;
+      const availableSeats = Math.max(0, 10 - bookedSeats);
+
+      if (availableSeats <= 0) {
+        return null;
+      }
+
+      return {
+        vehicle_id: vehicle.id,
+        vehicle_number: vehicle.vehicle_number,
+        driver_id: driverUser?.id || vehicle.current_driver_id,
+        driver_name: driverUser?.full_name || 'Approved Driver',
+        driver_custom_id: `DRV-${driverUser?.id || '000'}`,
+        destination_id: driverProfile?.destination_id || null,
+        destination_name: '',
+        available_seats: availableSeats,
+      };
+    }).filter(Boolean);
+
+    return res.json({ success: true, vehicles: formattedVehicles });
   } catch (error) {
     console.error('Active vehicles endpoint error:', error);
     return res.status(500).json({ success: false, message: 'Server error while fetching active vehicles' });
@@ -1022,7 +1062,7 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
 
 
 // ============================================================
-// NEW: ISSUE REPORTING (Passengers & Drivers)
+// ISSUE REPORTING (Passengers & Drivers)
 // ============================================================
 
 router.post('/report-issue', authMiddleware, async (req, res) => {
@@ -1063,6 +1103,5 @@ router.post('/report-issue', authMiddleware, async (req, res) => {
     return res.status(500).json({ success: false, message: 'Server error while reporting issue' });
   }
 });
-
 
 module.exports = router;

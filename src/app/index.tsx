@@ -16,6 +16,7 @@ import {
 import abuLogo from '../../assets/images/abu-logo.png';
 
 const API_URL = 'https://abu-ride.onrender.com';
+
 type Destination = {
   id: number;
   name: string;
@@ -34,6 +35,10 @@ type Driver = {
   destination_id: number;
   destination_name: string;
   fare: number;
+  vehicle_id?: number;
+  driver_id?: number;
+  driver_custom_id?: string;
+  available_seats?: number;
 };
 
 type User = {
@@ -185,7 +190,7 @@ export default function HomeScreen() {
         );
 
       const response = await fetch(
-        `${API_URL}/api/driver/available?destination_id=${destinationId}`,
+        `${API_URL}/api/driver/active-vehicles?destination_id=${destinationId}`,
         {
           headers: {
             Authorization:
@@ -197,17 +202,24 @@ export default function HomeScreen() {
       const data = await response.json();
 
       if (data.success) {
-        setDrivers(
-          data.drivers || []
-        );
+        const mappedVehicles = (data.vehicles || []).map((v: any) => ({
+          id: v.driver_id || v.vehicle_id,
+          driver_id: v.driver_id,
+          vehicle_id: v.vehicle_id,
+          full_name: v.driver_name || v.full_name || v.name || `Driver ${v.driver_custom_id || v.driver_id || ''}`,
+          phone: null,
+          vehicle_number: v.vehicle_number,
+          vehicle_type: `Driver ID: ${v.driver_custom_id || 'Approved'}`,
+          is_available: true,
+          destination_id: v.destination_id,
+          destination_name: v.destination_name,
+          fare: selectedDestination?.fare || 0,
+          available_seats: v.available_seats,
+        }));
+
+        setDrivers(mappedVehicles);
       } else {
         setDrivers([]);
-
-        Alert.alert(
-          'Unable to load drivers',
-          data.message ||
-            'No drivers found'
-        );
       }
     } catch (error) {
       console.log(
@@ -216,11 +228,6 @@ export default function HomeScreen() {
       );
 
       setDrivers([]);
-
-      Alert.alert(
-        'Connection Error',
-        'Unable to load available drivers.'
-      );
     } finally {
       setLoadingDrivers(false);
     }
@@ -243,8 +250,7 @@ export default function HomeScreen() {
   ) => {
     setSelectedDriver(driver);
   };
-
-  const purchaseTicket = async () => {
+const purchaseTicket = async () => {
     if (!selectedDestination) {
       Alert.alert(
         'Select destination',
@@ -271,7 +277,7 @@ export default function HomeScreen() {
         `Your wallet balance is ₦${walletBalance.toLocaleString()} but this trip costs ₦${fare.toLocaleString()}.`,
         [
           {
-            text: 'Request Funds',
+            text: 'Top Up',
             onPress: () =>
               setFundingModalVisible(true),
           },
@@ -304,6 +310,9 @@ export default function HomeScreen() {
         return;
       }
 
+      // Generate accurate ISO timestamp when payment is submitted
+      const purchaseTimestamp = new Date().toISOString();
+
       const response = await fetch(
         `${API_URL}/api/tickets/purchase`,
         {
@@ -318,7 +327,9 @@ export default function HomeScreen() {
             destination_id:
               selectedDestination.id,
             driver_id:
-              selectedDriver.id,
+              selectedDriver.driver_id || selectedDriver.id,
+            vehicle_id: selectedDriver.vehicle_id,
+            purchase_time: purchaseTimestamp,
           }),
         }
       );
@@ -344,9 +355,14 @@ export default function HomeScreen() {
         )
       );
 
+      const formattedTime = new Date(purchaseTimestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
       Alert.alert(
         'Payment Successful',
-        `Your fare of ₦${fare.toLocaleString()} has been deducted from your wallet.`,
+        `Fare of ₦${fare.toLocaleString()} paid at ${formattedTime}. Driver: ${selectedDriver.full_name || 'Assigned Driver'}.`,
         [
           {
             text: 'View QR Ticket',
@@ -371,7 +387,7 @@ export default function HomeScreen() {
     }
   };
 
- const topUpWallet = async () => {
+  const topUpWallet = async () => {
     const amount = Number(fundingAmount);
 
     if (!amount || amount <= 0) {
@@ -415,7 +431,6 @@ export default function HomeScreen() {
         return;
       }
 
-      // Update wallet balance instantly in UI
       setWalletBalance(Number(data.balance));
 
       setFundingModalVisible(false);
@@ -427,7 +442,6 @@ export default function HomeScreen() {
         `₦${amount.toLocaleString()} has been added to your wallet.`
       );
 
-      // Refresh wallet balance from server to be sure
       loadWallet();
     } catch (error) {
       console.log('Top-up error:', error);
@@ -439,7 +453,6 @@ export default function HomeScreen() {
       setRequestingFunding(false);
     }
   };
-
 
   const transferFunds = async () => {
     const email =
@@ -799,7 +812,6 @@ export default function HomeScreen() {
             >
               Select a destination
             </Text>
-
           </View>
         ) : loadingDrivers ? (
           <View
@@ -850,11 +862,14 @@ export default function HomeScreen() {
               }.
             </Text>
           </View>
-        ) : (
+       ) : (
           drivers.map((driver) => {
             const selected =
               selectedDriver?.id ===
               driver.id;
+
+            const displayName =
+              driver.full_name || driver.driver_custom_id || 'Assigned Driver';
 
             return (
               <Pressable
@@ -880,9 +895,7 @@ export default function HomeScreen() {
                       styles.driverAvatarText
                     }
                   >
-                    {driver.full_name
-                      .charAt(0)
-                      .toUpperCase()}
+                    {displayName.charAt(0).toUpperCase()}
                   </Text>
                 </View>
 
@@ -896,9 +909,8 @@ export default function HomeScreen() {
                       styles.driverName
                     }
                   >
-                    {
-                      driver.full_name
-                    }
+                    {driver.vehicle_number ? `${driver.vehicle_number} • ` : ''}
+                    {displayName}
                   </Text>
 
                   <Text
@@ -906,12 +918,7 @@ export default function HomeScreen() {
                       styles.driverVehicle
                     }
                   >
-                    {driver.vehicle_type ||
-                      'ABU Ride Vehicle'}
-
-                    {driver.vehicle_number
-                      ? ` • ${driver.vehicle_number}`
-                      : ''}
+                    Driver Name: {displayName}
                   </Text>
 
                   <Text
@@ -919,10 +926,7 @@ export default function HomeScreen() {
                       styles.driverRoute
                     }
                   >
-                    Serving{' '}
-                    {
-                      driver.destination_name
-                    }
+                    Serving {driver.destination_name}
                   </Text>
                 </View>
 
@@ -942,7 +946,9 @@ export default function HomeScreen() {
                       styles.onlineText
                     }
                   >
-                    Available
+                    {driver.available_seats !== undefined
+                      ? `${driver.available_seats} Seats`
+                      : 'Available'}
                   </Text>
                 </View>
               </Pressable>
@@ -962,7 +968,7 @@ export default function HomeScreen() {
                 styles.selectedDriverLabel
               }
             >
-              Selected Driver
+              Selected Fleet Vehicle & Driver
             </Text>
 
             <Text
@@ -970,9 +976,8 @@ export default function HomeScreen() {
                 styles.selectedDriverName
               }
             >
-              {
-                selectedDriver.full_name
-              }
+              {selectedDriver.vehicle_number ? `${selectedDriver.vehicle_number} • ` : ''}
+              {selectedDriver.full_name || selectedDriver.driver_custom_id || 'Assigned Driver'}
             </Text>
 
             <Text
@@ -980,14 +985,10 @@ export default function HomeScreen() {
                 styles.selectedDriverDetails
               }
             >
-              {selectedDriver.vehicle_type ||
-                'ABU Ride Vehicle'}
-
-              {selectedDriver.vehicle_number
-                ? ` • ${selectedDriver.vehicle_number}`
-                : ''}
+              Driver: {selectedDriver.full_name || 'Approved Driver'}
             </Text>
 
+            {/* Rest of payment summary remain unchanged */}
             <View
               style={
                 styles.paymentSummary
@@ -1068,7 +1069,6 @@ export default function HomeScreen() {
         )}
 
         {/* QUICK ACCESS */}
-
         <View
           style={styles.quickAccess}
         >
@@ -1166,7 +1166,6 @@ export default function HomeScreen() {
                 setFundingAmount
               }
             />
-
 
             <View
               style={

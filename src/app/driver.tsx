@@ -102,14 +102,13 @@ export default function DriverDashboard() {
         fetch(`${API_URL}/api/driver/vehicles`, { headers }),
       ]);
 
-      // Check content types to prevent HTML parsing crash
       const parseJsonSafely = async (res: Response, endpointName: string) => {
         const text = await res.text();
         try {
           return JSON.parse(text);
         } catch (err) {
-          console.error(`HTML/Non-JSON response from ${endpointName}:`, text);
-          throw new Error(`Server returned error page for ${endpointName} (Status: ${res.status})`);
+          console.error(`Non-JSON response from ${endpointName}:`, text);
+          throw new Error(`Server error at ${endpointName} (Status ${res.status})`);
         }
       };
 
@@ -118,7 +117,7 @@ export default function DriverDashboard() {
       const availabilityData = await parseJsonSafely(availabilityRes, '/api/driver/availability');
       const vehiclesData = await parseJsonSafely(vehiclesRes, '/api/driver/vehicles');
 
-      if (!profileRes.ok) throw new Error(profileData.message || 'Unable to load profile');
+      if (!profileRes.ok) throw new Error(profileData.message || 'Unable to load driver profile');
       if (!destinationsRes.ok) throw new Error(destinationsData.message || 'Unable to load destinations');
       if (!availabilityRes.ok) throw new Error(availabilityData.message || 'Unable to load availability');
       if (!vehiclesRes.ok) throw new Error(vehiclesData.message || 'Unable to load vehicles');
@@ -158,7 +157,6 @@ export default function DriverDashboard() {
       setRefreshing(false);
     }
   };
-
   useEffect(() => {
     loadDriverData();
   }, []);
@@ -169,10 +167,11 @@ export default function DriverDashboard() {
   };
 
   const handleSelectVehicle = async (vehicle: Vehicle) => {
+    // If the driver is currently online/available, warn them to pause first
     if (isAvailable) {
       Alert.alert(
-        'Go unavailable first',
-        'Set yourself as unavailable before changing your vehicle.'
+        'Go Unavailable First',
+        'Please set your status to Unavailable before changing your assigned vehicle.'
       );
       return;
     }
@@ -200,62 +199,38 @@ export default function DriverDashboard() {
       }
 
       setSelectedVehicle(vehicle);
-      Alert.alert('Vehicle Assigned', `You are now checked into ${vehicle.vehicle_number}`);
+      Alert.alert('Vehicle Checked In', `You are now assigned to ${vehicle.vehicle_number}.`);
       await loadDriverData();
     } catch (error: any) {
       Alert.alert('Selection Failed', error.message || 'Could not select vehicle.');
     }
   };
 
-  const chooseDestination = (
-    destination: Destination
-  ) => {
-    if (!selectedVehicle) {
-      Alert.alert(
-        'Vehicle Required',
-        'Please select your fleet vehicle (01 - 20) above before choosing a route.'
-      );
-      return;
-    }
-
-    if (isAvailable) {
-      Alert.alert(
-        'Go unavailable first',
-        'Set yourself as unavailable before changing your route.'
-      );
-
-      return;
-    }
-
-    setSelectedDestination(
-      destination
-    );
-  };
-
   const handleAvailability = async () => {
-    if (!selectedVehicle) {
-      Alert.alert(
-        'Vehicle Required',
-        'Please select your fleet vehicle before becoming available.'
-      );
-      return;
-    }
+    // Allowing going UNAVAILABLE at any time so drivers don't get trapped
+    if (isAvailable) {
+      // Driver wants to go offline -> Allow immediately!
+    } else {
+      // Driver wants to go ONLINE -> Enforce Vehicle and Route requirements
+      if (!selectedVehicle) {
+        Alert.alert(
+          'Vehicle Required',
+          'Please select your fleet vehicle (01 - 20) above before becoming available.'
+        );
+        return;
+      }
 
-    if (
-      !isAvailable &&
-      !selectedDestination
-    ) {
-      Alert.alert(
-        'Select a destination',
-        'Please select the destination you are currently serving before becoming available.'
-      );
-
-      return;
+      if (!selectedDestination) {
+        Alert.alert(
+          'Select a Destination',
+          'Please select the route destination you are serving before becoming available.'
+        );
+        return;
+      }
     }
 
     try {
       setUpdatingAvailability(true);
-
       const token = await getToken();
 
       if (!token) {
@@ -263,93 +238,37 @@ export default function DriverDashboard() {
         return;
       }
 
-      const response = await fetch(
-        `${API_URL}/api/driver/availability`,
-        {
-          method: 'POST',
+      const response = await fetch(`${API_URL}/api/driver/availability`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          destination_id: selectedDestination?.id || null,
+          is_available: !isAvailable,
+        }),
+      });
 
-          headers: {
-            'Content-Type':
-              'application/json',
-
-            Authorization:
-              `Bearer ${token}`,
-          },
-
-          body: JSON.stringify({
-            destination_id:
-              selectedDestination?.id ||
-              null,
-
-            is_available:
-              !isAvailable,
-          }),
-        }
-      );
-
-      const data =
-        await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.message ||
-            'Unable to update availability'
-        );
+        throw new Error(data.message || 'Unable to update availability');
       }
 
-      const newAvailability =
-        Boolean(
-          data.availability
-            ?.is_available
-        );
-
-      setIsAvailable(
-        newAvailability
-      );
-
-      if (
-        data.availability
-          ?.location_id
-      ) {
-        const destination =
-          destinations.find(
-            (item) =>
-              Number(item.id) ===
-              Number(
-                data.availability
-                  .location_id
-              )
-          );
-
-        setSelectedDestination(
-          destination || null
-        );
-      }
+      const newAvailability = Boolean(data.availability?.is_available);
+      setIsAvailable(newAvailability);
 
       Alert.alert(
-        newAvailability
-          ? 'You are now available'
-          : 'You are now unavailable',
-        data.message ||
-          'Your availability has been updated.'
+        newAvailability ? 'You are now Available' : 'You are now Unavailable',
+        data.message || 'Your status has been updated.'
       );
 
       await loadDriverData();
     } catch (error: any) {
-      console.error(
-        'Availability update error:',
-        error
-      );
-
-      Alert.alert(
-        'Update failed',
-        error.message ||
-          'Something went wrong while updating availability.'
-      );
+      Alert.alert('Update Failed', error.message || 'Something went wrong.');
     } finally {
-      setUpdatingAvailability(
-        false
-      );
+      setUpdatingAvailability(false);
     }
   };
 

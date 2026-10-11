@@ -2,16 +2,16 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
-const API_URL = 'http://192.168.204.133:5000';
+const API_URL = 'https://abu-ride.onrender.com';
 
 type Trip = {
   id: number;

@@ -15,7 +15,7 @@ import {
 
 import abuLogo from '../../assets/images/abu-logo.png';
 
-const API_URL = 'http://192.168.204.133:5000';
+const API_URL = 'https://abu-ride.onrender.com';
 
 type Destination = {
   id: number;
@@ -372,90 +372,75 @@ export default function HomeScreen() {
     }
   };
 
-  const submitFundingRequest = async () => {
-    const amount =
-      Number(fundingAmount);
+ const topUpWallet = async () => {
+    const amount = Number(fundingAmount);
 
     if (!amount || amount <= 0) {
       Alert.alert(
         'Invalid amount',
-        'Enter a valid funding amount.'
+        'Enter a valid top-up amount.'
       );
-
       return;
     }
 
     try {
       setRequestingFunding(true);
 
-      const token =
-        await SecureStore.getItemAsync(
-          'auth_token'
-        );
+      const token = await SecureStore.getItemAsync('auth_token');
 
       if (!token) {
-        Alert.alert(
-          'Session expired',
-          'Please log in again.'
-        );
-
+        Alert.alert('Session expired', 'Please log in again.');
+        router.replace('/login');
         return;
       }
 
       const response = await fetch(
-        `${API_URL}/api/wallet/request-funding`,
+        `${API_URL}/api/wallet/topup`,
         {
           method: 'POST',
           headers: {
-            'Content-Type':
-              'application/json',
-            Authorization:
-              `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            amount,
-            note: fundingNote.trim(),
-          }),
+          body: JSON.stringify({ amount }),
         }
       );
 
       const data = await response.json();
 
-      if (
-        !response.ok ||
-        !data.success
-      ) {
+      if (!response.ok || !data.success) {
         Alert.alert(
-          'Request failed',
-          data.message ||
-            'Unable to submit funding request.'
+          'Top-up failed',
+          data.message || 'Unable to fund wallet.'
         );
-
         return;
       }
+
+      // Update wallet balance instantly in UI
+      setWalletBalance(Number(data.balance));
 
       setFundingModalVisible(false);
       setFundingAmount('');
       setFundingNote('');
 
       Alert.alert(
-        'Request Submitted',
-        'Your funding request has been sent to the admin for approval.'
-      );
-    } catch (error) {
-      console.log(
-        'Funding request error:',
-        error
+        'Top-Up Successful',
+        `₦${amount.toLocaleString()} has been added to your wallet.`
       );
 
+      // Refresh wallet balance from server to be sure
+      loadWallet();
+    } catch (error) {
+      console.log('Top-up error:', error);
       Alert.alert(
         'Connection Error',
-        'Unable to submit your funding request.'
+        'Unable to connect to the ABU Ride server.'
       );
     } finally {
       setRequestingFunding(false);
     }
   };
+
 
   const transferFunds = async () => {
     const email =
@@ -1162,7 +1147,7 @@ export default function HomeScreen() {
                 styles.modalTitle
               }
             >
-              Request Wallet Funding
+              Top Up Wallet
             </Text>
 
             <Text
@@ -1170,9 +1155,7 @@ export default function HomeScreen() {
                 styles.modalText
               }
             >
-              Enter the amount you
-              want the admin to
-              approve for your wallet.
+              Enter the amount you want to add to your wallet.
             </Text>
 
             <TextInput
@@ -1227,7 +1210,7 @@ export default function HomeScreen() {
                   styles.submitButton
                 }
                 onPress={
-                  submitFundingRequest
+                  topUpWallet
                 }
                 disabled={
                   requestingFunding
@@ -1240,7 +1223,7 @@ export default function HomeScreen() {
                 >
                   {requestingFunding
                     ? 'Sending...'
-                    : 'Submit Request'}
+                    : 'Top Up Now'}
                 </Text>
               </Pressable>
             </View>

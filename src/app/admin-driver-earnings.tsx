@@ -22,7 +22,7 @@ import * as SecureStore from 'expo-secure-store';
 import abuLogo from '../../assets/images/abu-logo.png';
 
 const API_URL =
-  'http://192.168.204.133:5000';
+  'https://abu-ride.onrender.com';
 
 type DailyEarning = {
   date: string;

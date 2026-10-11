@@ -173,182 +173,114 @@ router.get(
 
 
 // ============================================================
-// REQUEST WALLET FUNDING
+// DIRECT WALLET TOP-UP
 // ============================================================
 
 router.post(
-  '/request-funding',
+  '/topup',
   authMiddleware,
   async (req, res) => {
     try {
-      const {
-        amount,
-        note,
-      } = req.body;
-
-      const requestedAmount =
-        Number(amount);
+      const { amount } = req.body;
+      const topUpAmount = Number(amount);
 
       // -----------------------------
       // Validate amount
       // -----------------------------
-
-      if (
-        !requestedAmount ||
-        requestedAmount <= 0
-      ) {
+      if (!topUpAmount || topUpAmount <= 0) {
         return res.status(400).json({
           success: false,
-          message:
-            'Enter a valid funding amount',
+          message: 'Enter a valid top-up amount',
         });
       }
 
       // -----------------------------
-      // Check existing pending request
+      // Get current wallet balance
       // -----------------------------
+      const { data: wallet, error: walletError } = await supabase
+        .from('wallets')
+        .select('id, balance')
+        .eq('user_id', req.user.id)
+        .maybeSingle();
 
-      const {
-        data: pendingRequests,
-        error: pendingError,
-      } = await supabase
-        .from('funding_requests')
-        .select('id')
-        .eq(
-          'user_id',
-          req.user.id
-        )
-        .eq(
-          'status',
-          'pending'
-        )
-        .limit(1);
-
-      if (pendingError) {
-        console.error(
-          'Pending funding lookup error:',
-          pendingError
-        );
-
+      if (walletError) {
+        console.error('Wallet lookup error:', walletError);
         return res.status(500).json({
           success: false,
-          message:
-            'Could not check existing funding requests',
+          message: 'Could not access your wallet',
         });
       }
 
-      if (
-        pendingRequests &&
-        pendingRequests.length > 0
-      ) {
-        return res.status(400).json({
+      if (!wallet) {
+        return res.status(404).json({
           success: false,
-          message:
-            'You already have a pending funding request',
+          message: 'Wallet not found',
         });
       }
 
-      // -----------------------------
-      // Generate request reference
-      // -----------------------------
-
-      const requestReference =
-        `FUNDREQ-${Date.now()}-${crypto
-          .randomBytes(3)
-          .toString('hex')
-          .toUpperCase()}`;
+      const currentBalance = Number(wallet.balance) || 0;
+      const newBalance = currentBalance + topUpAmount;
 
       // -----------------------------
-      // Create funding request
+      // Update wallet balance
       // -----------------------------
-
-      const {
-        data: request,
-        error: requestError,
-      } = await supabase
-        .from('funding_requests')
-        .insert({
-          request_reference:
-            requestReference,
-
-          user_id:
-            req.user.id,
-
-          amount:
-            requestedAmount,
-
-          note:
-            note
-              ? String(note).trim()
-              : null,
-
-          status:
-            'pending',
+      const { error: updateError } = await supabase
+        .from('wallets')
+        .update({
+          balance: newBalance,
+          updated_at: new Date(),
         })
-        .select(
-          `
-          id,
-          request_reference,
-          user_id,
-          amount,
-          note,
-          status,
-          created_at
-          `
-        )
-        .single();
+        .eq('user_id', req.user.id);
 
-      if (requestError) {
-        console.error(
-          'Funding request insert error:',
-          requestError
-        );
-
+      if (updateError) {
+        console.error('Wallet top-up update error:', updateError);
         return res.status(500).json({
           success: false,
-          message:
-            'Could not submit funding request',
+          message: 'Could not update wallet balance',
         });
       }
 
-      return res.status(201).json({
+      // -----------------------------
+      // Create transaction record
+      // -----------------------------
+      const transactionReference = `TOPUP-${Date.now()}-${crypto
+        .randomBytes(3)
+        .toString('hex')
+        .toUpperCase()}`;
+
+      const { error: transactionError } = await supabase
+        .from('transactions')
+        .insert({
+          transaction_reference: transactionReference,
+          user_id: req.user.id,
+          type: 'Wallet Top-Up',
+          amount: topUpAmount,
+          balance_before: currentBalance,
+          balance_after: newBalance,
+          description: 'Direct wallet top-up',
+          status: 'successful',
+        });
+
+      if (transactionError) {
+        console.error('Top-up transaction error:', transactionError);
+      }
+
+      return res.status(200).json({
         success: true,
-        message:
-          'Funding request submitted successfully',
-
-        request: {
-          id:
-            request.id,
-
-          request_reference:
-            request.request_reference,
-
-          amount:
-            Number(
-              request.amount
-            ) || 0,
-
-          note:
-            request.note,
-
-          status:
-            request.status,
-
-          created_at:
-            request.created_at,
+        message: 'Wallet funded successfully',
+        balance: newBalance,
+        transaction: {
+          reference: transactionReference,
+          amount: topUpAmount,
+          balance_after: newBalance,
         },
       });
 
     } catch (error) {
-      console.error(
-        'Funding request error:',
-        error
-      );
-
+      console.error('Top-up error:', error);
       return res.status(500).json({
         success: false,
-        message:
-          'Something went wrong while submitting the funding request',
+        message: 'Something went wrong during wallet top-up',
       });
     }
   }

@@ -3,20 +3,20 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 import abuLogo from '../../assets/images/abu-logo.png';
 
-const API_URL = 'http://192.168.204.133:5000';
+const API_URL = 'https://abu-ride.onrender.com';
 
 type DriverProfile = {
   id: number;

@@ -2,18 +2,18 @@ import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
-const API_URL = 'http://192.168.204.133:5000';
+const API_URL = 'https://abu-ride.onrender.com';
 
 type Ticket = {
   id: number;

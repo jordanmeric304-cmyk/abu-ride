@@ -3,16 +3,16 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
 // IMPORTANT: use the same LAN IP as the backend your phone is connecting to.
-const API_URL = 'http://192.168.204.133:5000';
+const API_URL = 'https://abu-ride.onrender.com';
 
 export default function ScannerScreen() {
   const [permission, requestPermission] =

@@ -3,22 +3,22 @@ import * as SecureStore from 'expo-secure-store';
 import { useState } from 'react';
 
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
 
 import abuLogo from '../../assets/images/abu-logo.png';
 
-const API_URL = 'http://192.168.204.133:5000';
+const API_URL = 'https://abu-ride.onrender.com';
 
 export default function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'register'>('login');

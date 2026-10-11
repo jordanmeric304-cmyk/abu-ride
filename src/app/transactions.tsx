@@ -2,17 +2,17 @@ import { router, useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
+    ActivityIndicator,
+    Alert,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 
-const API_URL = 'http://192.168.204.133:5000';
+const API_URL = 'https://abu-ride.onrender.com';
 
 type Transaction = {
   id: number;

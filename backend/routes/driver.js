@@ -249,81 +249,67 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
 });
 
 // ============================================================
-// GET ACTIVE VEHICLES FOR PASSENGERS (Strictly Filters Available & Online Only)
+// GET ACTIVE VEHICLES FOR PASSENGERS (Failsafe & Flexible)
 // ============================================================
 
 router.get('/active-vehicles', authMiddleware, async (req, res) => {
   try {
     const { destination_id } = req.query;
 
-    // 1. Fetch active vehicles with checked-in drivers
-    const { data: vehicles, error: vehicleError } = await supabase
-      .from('vehicles')
-      .select('*, trips(*)')
-      .eq('is_active', true)
-      .not('current_driver_id', 'is', null);
+    // 1. Fetch all driver profiles who are currently available
+    let driverQuery = supabase
+      .from('driver_profiles')
+      .select('user_id, destination_id, is_available, vehicle_number')
+      .eq('is_available', true);
 
-    if (vehicleError) {
-      console.error('Fetch active vehicles error:', vehicleError);
-      return res.status(400).json({ success: false, message: 'Could not fetch active vehicles' });
+    if (destination_id) {
+      driverQuery = driverQuery.eq('destination_id', Number(destination_id));
     }
 
-    if (!vehicles || vehicles.length === 0) {
+    const { data: availableDrivers, error: driverError } = await driverQuery;
+
+    if (driverError) {
+      console.error('Fetch available drivers error:', driverError);
+      return res.status(400).json({ success: false, message: 'Could not fetch available drivers' });
+    }
+
+    if (!availableDrivers || availableDrivers.length === 0) {
       return res.json({ success: true, vehicles: [] });
     }
 
-    const driverIds = vehicles.map(v => v.current_driver_id).filter(Boolean);
+    const driverIds = availableDrivers.map(d => d.user_id);
 
-    // 2. Fetch driver profiles to check if they are *truly* available (`is_available = true`) and match destination
-    const { data: driverProfiles } = await supabase
-      .from('driver_profiles')
-      .select('user_id, destination_id, is_available')
-      .in('user_id', driverIds)
-      .eq('is_available', true);
-
-    const availableDriverIds = new Set((driverProfiles || []).map(p => p.user_id));
-
-    // 3. Fetch user names
+    // 2. Fetch driver user details (names/usernames)
     const { data: users } = await supabase
       .from('users')
       .select('id, full_name, email, username')
       .in('id', driverIds);
 
-    // 4. Format and strictly filter out offline drivers or destination mismatches
-    const formattedVehicles = vehicles.map(vehicle => {
-      // If driver is not actually available in driver_profiles, skip them entirely
-      if (!availableDriverIds.has(vehicle.current_driver_id)) {
-        return null;
-      }
+    // 3. Fetch active vehicle assignments from vehicles table
+    const { data: vehicles } = await supabase
+      .from('vehicles')
+      .select('*')
+      .in('current_driver_id', driverIds);
 
-      const profile = (driverProfiles || []).find(p => p.user_id === vehicle.current_driver_id);
-      const user = (users || []).find(u => u.id === vehicle.current_driver_id);
-
-      if (destination_id && Number(profile?.destination_id) !== Number(destination_id)) {
-        return null;
-      }
-
-      const activeTrip = vehicle.trips?.find(trip => trip.completed_at === null);
-      const bookedSeats = activeTrip ? Number(activeTrip.total_booked_seats || 0) : 0;
-      const availableSeats = Math.max(0, 10 - bookedSeats);
-
-      if (availableSeats <= 0) {
-        return null; // Skip full vehicles
-      }
+    // 4. Build response array
+    const result = availableDrivers.map(profile => {
+      const user = (users || []).find(u => u.id === profile.user_id);
+      const vehicle = (vehicles || []).find(v => v.current_driver_id === profile.user_id);
 
       const displayName = user?.username || user?.full_name || user?.email?.split('@')[0] || 'Driver';
+      const vehNumber = vehicle?.vehicle_number || profile.vehicle_number || 'Fleet Bus';
 
       return {
-        vehicle_id: vehicle.id,
-        vehicle_number: vehicle.vehicle_number || `Vehicle ${vehicle.id}`,
-        driver_id: vehicle.current_driver_id,
+        vehicle_id: vehicle?.id || profile.user_id,
+        vehicle_number: vehNumber,
+        driver_id: profile.user_id,
         driver_name: displayName,
-        destination_id: profile?.destination_id || null,
-        available_seats: availableSeats,
+        destination_id: profile.destination_id,
+        available_seats: 10,
       };
-    }).filter(Boolean);
+    });
 
-    return res.json({ success: true, vehicles: formattedVehicles });
+    return res.json({ success: true, vehicles: result });
   } catch (error) {
     console.error('Active vehicles endpoint error:', error);
     return res.status(500).json({ success: false, message: 'Server error while fetching active vehicles' });

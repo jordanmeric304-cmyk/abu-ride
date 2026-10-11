@@ -54,38 +54,24 @@ export default function HomeScreen() {
   const [walletBalance, setWalletBalance] = useState(0);
 
   const [destinations, setDestinations] = useState<Destination[]>([]);
-  const [selectedDestination, setSelectedDestination] =
-    useState<Destination | null>(null);
+  const [selectedDestination, setSelectedDestination] = useState<Destination | null>(null);
 
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [selectedDriver, setSelectedDriver] =
-    useState<Driver | null>(null);
+  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
 
   const [loadingDrivers, setLoadingDrivers] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
 
-  const [fundingModalVisible, setFundingModalVisible] =
-    useState(false);
-
+  const [fundingModalVisible, setFundingModalVisible] = useState(false);
   const [fundingAmount, setFundingAmount] = useState('');
   const [fundingNote, setFundingNote] = useState('');
-  const [requestingFunding, setRequestingFunding] =
-    useState(false);
+  const [requestingFunding, setRequestingFunding] = useState(false);
 
-  const [transferModalVisible, setTransferModalVisible] =
-    useState(false);
-
-  const [recipientEmail, setRecipientEmail] =
-    useState('');
-
-  const [transferAmount, setTransferAmount] =
-    useState('');
-
-  const [transferNote, setTransferNote] =
-    useState('');
-
-  const [transferring, setTransferring] =
-    useState(false);
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferNote, setTransferNote] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   useEffect(() => {
     loadUser();
@@ -95,9 +81,7 @@ export default function HomeScreen() {
 
   const loadUser = async () => {
     try {
-      const savedUser =
-        await SecureStore.getItemAsync('user');
-
+      const savedUser = await SecureStore.getItemAsync('user');
       if (savedUser) {
         setUser(JSON.parse(savedUser));
       }
@@ -108,75 +92,40 @@ export default function HomeScreen() {
 
   const loadDestinations = async () => {
     try {
-      const response = await fetch(
-        `${API_URL}/api/destinations`
-      );
-
+      const response = await fetch(`${API_URL}/api/destinations`);
       const data = await response.json();
 
       if (data.success) {
         setDestinations(data.destinations);
       } else {
-        Alert.alert(
-          'Error',
-          data.message ||
-            'Failed to load destinations'
-        );
+        Alert.alert('Error', data.message || 'Failed to load destinations');
       }
     } catch (error) {
-      console.log(
-        'Destinations error:',
-        error
-      );
-
-      Alert.alert(
-        'Connection Error',
-        'Unable to connect to the ABU Ride server.'
-      );
+      console.log('Destinations error:', error);
+      Alert.alert('Connection Error', 'Unable to connect to the ABU Ride server.');
     }
   };
 
   const loadWallet = async () => {
     try {
-      const token =
-        await SecureStore.getItemAsync(
-          'auth_token'
-        );
+      const token = await SecureStore.getItemAsync('auth_token');
+      if (!token) return;
 
-      if (!token) {
-        return;
-      }
-
-      const response = await fetch(
-        `${API_URL}/api/wallet`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const response = await fetch(`${API_URL}/api/wallet`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const data = await response.json();
 
-      if (
-        data.success &&
-        data.wallet
-      ) {
-        setWalletBalance(
-          Number(
-            data.wallet.balance || 0
-          )
-        );
+      if (data.success && data.wallet) {
+        setWalletBalance(Number(data.wallet.balance || 0));
       }
     } catch (error) {
-      console.log(
-        'Wallet error:',
-        error
-      );
+      console.log('Wallet error:', error);
     }
   };
 
-const loadDrivers = async (destinationId: number) => {
+  const loadDrivers = async (destinationId: number) => {
     setLoadingDrivers(true);
     setSelectedDriver(null);
     setDrivers([]);
@@ -187,9 +136,7 @@ const loadDrivers = async (destinationId: number) => {
       const response = await fetch(
         `${API_URL}/api/driver/active-vehicles?destination_id=${destinationId}`,
         {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
 
@@ -200,15 +147,15 @@ const loadDrivers = async (destinationId: number) => {
           id: v.driver_id || v.vehicle_id,
           driver_id: v.driver_id,
           vehicle_id: v.vehicle_id,
-          full_name: v.driver_name,
+          full_name: v.driver_name || 'Driver',
           phone: null,
-          vehicle_number: v.vehicle_number,
-          vehicle_type: `Driver: ${v.driver_name}`,
+          vehicle_number: v.vehicle_number || `Vehicle ${v.vehicle_id}`,
+          vehicle_type: 'Fleet Vehicle',
           is_available: true,
           destination_id: destinationId,
           destination_name: selectedDestination?.name || '',
           fare: selectedDestination?.fare || 0,
-          available_seats: v.available_seats || 10,
+          available_seats: v.available_seats ?? 10,
         }));
 
         setDrivers(mapped);
@@ -222,7 +169,7 @@ const loadDrivers = async (destinationId: number) => {
       setLoadingDrivers(false);
     }
   };
-  
+
   const selectDestination = (destination: Destination) => {
     setSelectedDestination(destination);
     loadDrivers(destination.id);
@@ -234,18 +181,12 @@ const loadDrivers = async (destinationId: number) => {
 
   const purchaseTicket = async () => {
     if (!selectedDestination) {
-      Alert.alert(
-        'Select destination',
-        'Please select a destination first.'
-      );
+      Alert.alert('Select destination', 'Please select a destination first.');
       return;
     }
 
     if (!selectedDriver) {
-      Alert.alert(
-        'Select driver',
-        'Please select an available driver first.'
-      );
+      Alert.alert('Select driver', 'Please select an available driver first.');
       return;
     }
 
@@ -256,14 +197,8 @@ const loadDrivers = async (destinationId: number) => {
         'Insufficient balance',
         `Your wallet balance is ₦${walletBalance.toLocaleString()} but this trip costs ₦${fare.toLocaleString()}.`,
         [
-          {
-            text: 'Top Up',
-            onPress: () => setFundingModalVisible(true),
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
+          { text: 'Top Up', onPress: () => setFundingModalVisible(true) },
+          { text: 'Cancel', style: 'cancel' },
         ]
       );
       return;
@@ -271,7 +206,6 @@ const loadDrivers = async (destinationId: number) => {
 
     try {
       setPurchasing(true);
-
       const token = await SecureStore.getItemAsync('auth_token');
 
       if (!token) {
@@ -282,30 +216,24 @@ const loadDrivers = async (destinationId: number) => {
 
       const purchaseTimestamp = new Date().toISOString();
 
-      const response = await fetch(
-        `${API_URL}/api/tickets/purchase`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            destination_id: selectedDestination.id,
-            driver_id: selectedDriver.driver_id || selectedDriver.id,
-            vehicle_id: selectedDriver.vehicle_id,
-            purchase_time: purchaseTimestamp,
-          }),
-        }
-      );
+      const response = await fetch(`${API_URL}/api/tickets/purchase`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          destination_id: selectedDestination.id,
+          driver_id: selectedDriver.driver_id || selectedDriver.id,
+          vehicle_id: selectedDriver.vehicle_id,
+          purchase_time: purchaseTimestamp,
+        }),
+      });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        Alert.alert(
-          'Purchase failed',
-          data.message || 'Unable to purchase ticket.'
-        );
+        Alert.alert('Purchase failed', data.message || 'Unable to purchase ticket.');
         return;
       }
 
@@ -318,22 +246,17 @@ const loadDrivers = async (destinationId: number) => {
 
       Alert.alert(
         'Payment Successful',
-        `Fare of ₦${fare.toLocaleString()} paid at ${formattedTime}. Driver: @${selectedDriver.full_name}.`,
+        `Fare of ₦${fare.toLocaleString()} paid at ${formattedTime}. Driver: ${selectedDriver.full_name}.`,
         [
           {
             text: 'View QR Ticket',
-            onPress: () => {
-              router.replace('/ticket');
-            },
+            onPress: () => router.replace('/ticket'),
           },
         ]
       );
     } catch (error) {
       console.log('Purchase error:', error);
-      Alert.alert(
-        'Connection Error',
-        'Unable to connect to the ABU Ride server.'
-      );
+      Alert.alert('Connection Error', 'Unable to connect to the ABU Ride server.');
     } finally {
       setPurchasing(false);
     }
@@ -349,7 +272,6 @@ const loadDrivers = async (destinationId: number) => {
 
     try {
       setRequestingFunding(true);
-
       const token = await SecureStore.getItemAsync('auth_token');
 
       if (!token) {
@@ -358,25 +280,19 @@ const loadDrivers = async (destinationId: number) => {
         return;
       }
 
-      const response = await fetch(
-        `${API_URL}/api/wallet/topup`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ amount }),
-        }
-      );
+      const response = await fetch(`${API_URL}/api/wallet/topup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount }),
+      });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        Alert.alert(
-          'Top-up failed',
-          data.message || 'Unable to fund wallet.'
-        );
+        Alert.alert('Top-up failed', data.message || 'Unable to fund wallet.');
         return;
       }
 
@@ -385,18 +301,11 @@ const loadDrivers = async (destinationId: number) => {
       setFundingAmount('');
       setFundingNote('');
 
-      Alert.alert(
-        'Top-Up Successful',
-        `₦${amount.toLocaleString()} has been added to your wallet.`
-      );
-
+      Alert.alert('Top-Up Successful', `₦${amount.toLocaleString()} has been added to your wallet.`);
       loadWallet();
     } catch (error) {
       console.log('Top-up error:', error);
-      Alert.alert(
-        'Connection Error',
-        'Unable to connect to the ABU Ride server.'
-      );
+      Alert.alert('Connection Error', 'Unable to connect to the ABU Ride server.');
     } finally {
       setRequestingFunding(false);
     }
@@ -407,10 +316,7 @@ const loadDrivers = async (destinationId: number) => {
     const amount = Number(transferAmount);
 
     if (!email) {
-      Alert.alert(
-        'Recipient required',
-        'Enter the email address of the passenger you want to send funds to.'
-      );
+      Alert.alert('Recipient required', 'Enter the email address of the passenger you want to send funds to.');
       return;
     }
 
@@ -420,16 +326,12 @@ const loadDrivers = async (destinationId: number) => {
     }
 
     if (amount > walletBalance) {
-      Alert.alert(
-        'Insufficient balance',
-        `Your wallet balance is ₦${walletBalance.toLocaleString()}.`
-      );
+      Alert.alert('Insufficient balance', `Your wallet balance is ₦${walletBalance.toLocaleString()}.`);
       return;
     }
 
     try {
       setTransferring(true);
-
       const token = await SecureStore.getItemAsync('auth_token');
 
       if (!token) {
@@ -438,29 +340,23 @@ const loadDrivers = async (destinationId: number) => {
         return;
       }
 
-      const response = await fetch(
-        `${API_URL}/api/wallet/transfer`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            recipient_email: email,
-            amount,
-            note: transferNote.trim(),
-          }),
-        }
-      );
+      const response = await fetch(`${API_URL}/api/wallet/transfer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          recipient_email: email,
+          amount,
+          note: transferNote.trim(),
+        }),
+      });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        Alert.alert(
-          'Transfer failed',
-          data.message || 'Unable to transfer funds.'
-        );
+        Alert.alert('Transfer failed', data.message || 'Unable to transfer funds.');
         return;
       }
 
@@ -470,16 +366,10 @@ const loadDrivers = async (destinationId: number) => {
       setTransferAmount('');
       setTransferNote('');
 
-      Alert.alert(
-        'Transfer Successful',
-        `₦${amount.toLocaleString()} has been sent to ${data.transfer.recipient_name}.`
-      );
+      Alert.alert('Transfer Successful', `₦${amount.toLocaleString()} has been sent to ${data.transfer.recipient_name}.`);
     } catch (error) {
       console.log('Transfer error:', error);
-      Alert.alert(
-        'Connection Error',
-        'Unable to connect to the ABU Ride server.'
-      );
+      Alert.alert('Connection Error', 'Unable to connect to the ABU Ride server.');
     } finally {
       setTransferring(false);
     }
@@ -487,18 +377,11 @@ const loadDrivers = async (destinationId: number) => {
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* BRAND HEADER */}
         <View style={styles.brandHeader}>
           <View style={styles.brandLeft}>
-            <Image
-              source={abuLogo}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+            <Image source={abuLogo} style={styles.logo} resizeMode="contain" />
             <Text style={styles.appName}>ABU Ride</Text>
           </View>
 
@@ -515,9 +398,7 @@ const loadDrivers = async (destinationId: number) => {
         {/* WELCOME */}
         <View style={styles.welcomeHeader}>
           <Text style={styles.smallText}>Welcome back</Text>
-          <Text style={styles.userName}>
-            {user?.full_name || 'Passenger'}
-          </Text>
+          <Text style={styles.userName}>{user?.full_name || 'Passenger'}</Text>
         </View>
 
         {/* WALLET */}
@@ -598,7 +479,6 @@ const loadDrivers = async (destinationId: number) => {
             </Text>
           </View>
         )}
-
         {/* AVAILABLE DRIVERS */}
         <View style={styles.driverHeader}>
           <Text style={styles.sectionTitle}>Available Drivers</Text>
@@ -650,7 +530,7 @@ const loadDrivers = async (destinationId: number) => {
                 <View style={styles.driverInfo}>
                   <Text style={styles.driverName}>
                     {driver.vehicle_number ? `${driver.vehicle_number} • ` : ''}
-                    @{driver.full_name}
+                    {driver.full_name}
                   </Text>
 
                   <Text style={styles.driverVehicle}>
@@ -684,11 +564,11 @@ const loadDrivers = async (destinationId: number) => {
 
             <Text style={styles.selectedDriverName}>
               {selectedDriver.vehicle_number ? `${selectedDriver.vehicle_number} • ` : ''}
-              @{selectedDriver.full_name}
+              {selectedDriver.full_name}
             </Text>
 
             <Text style={styles.selectedDriverDetails}>
-              Driver Username: @{selectedDriver.full_name}
+              Driver Identity: {selectedDriver.full_name}
             </Text>
 
             <View style={styles.paymentSummary}>
@@ -1163,7 +1043,7 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontSize: 11,
     color: '#66736C',
-    marginBottom:4,
+    marginBottom: 4,
   },
   summaryValue: {
     fontSize: 14,
@@ -1211,7 +1091,7 @@ const styles = StyleSheet.create({
   },
   quickText: {
     fontSize: 12,
-    color: '#6B756F',
+    color: '#66736F',
     marginTop: 5,
     lineHeight: 18,
   },

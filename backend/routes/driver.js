@@ -1,10 +1,8 @@
 const express = require('express');
-
 const supabase = require('../supabase');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
-
 
 // ============================================================
 // DRIVER-ONLY MIDDLEWARE
@@ -17,913 +15,169 @@ const driverOnly = (req, res, next) => {
       message: 'Driver access required',
     });
   }
-
   next();
 };
-
 
 // ============================================================
 // GET DRIVER PROFILE
 // ============================================================
 
-router.get(
-  '/profile',
-  authMiddleware,
-  driverOnly,
-  async (req, res) => {
-    try {
-      const {
-        data: driver,
-        error,
-      } = await supabase
-        .from('driver_profiles')
-        .select(`
-          user_id,
-          driver_license_number,
-          vehicle_number,
-          vehicle_type,
-          is_available,
-          destination_id,
-          total_trips,
-          total_earnings,
-          updated_at,
-          users:user_id (
-            id,
-            full_name,
-            email,
-            phone,
-            profile_image
-          )
-        `)
-        .eq('user_id', req.user.id)
-        .maybeSingle();
+router.get('/profile', authMiddleware, driverOnly, async (req, res) => {
+  try {
+    const { data: driver, error } = await supabase
+      .from('driver_profiles')
+      .select(`
+        user_id,
+        driver_license_number,
+        vehicle_number,
+        vehicle_type,
+        is_available,
+        destination_id,
+        total_trips,
+        total_earnings,
+        updated_at,
+        users:user_id (
+          id,
+          full_name,
+          email,
+          phone,
+          profile_image
+        )
+      `)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
-      if (error) {
-        console.error('Driver profile error:', error);
-
-        return res.status(500).json({
-          success: false,
-          message: 'Something went wrong while loading driver profile',
-        });
-      }
-
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message: 'Driver profile not found',
-        });
-      }
-
-      return res.json({
-        success: true,
-
-        driver: {
-          id: driver.users?.id || driver.user_id,
-
-          full_name:
-            driver.users?.full_name || null,
-
-          email:
-            driver.users?.email || null,
-
-          phone:
-            driver.users?.phone || null,
-
-          profile_image:
-            driver.users?.profile_image || null,
-
-          driver_license_number:
-            driver.driver_license_number || null,
-
-          vehicle_number:
-            driver.vehicle_number || null,
-
-          vehicle_type:
-            driver.vehicle_type || null,
-
-          is_available:
-            Boolean(driver.is_available),
-
-          destination_id:
-            driver.destination_id || null,
-
-          total_trips:
-            Number(driver.total_trips) || 0,
-
-          total_earnings:
-            Number(driver.total_earnings) || 0,
-
-          updated_at:
-            driver.updated_at || null,
-        },
-      });
-
-    } catch (error) {
+    if (error) {
       console.error('Driver profile error:', error);
-
-      return res.status(500).json({
-        success: false,
-        message: 'Something went wrong while loading driver profile',
-      });
+      return res.status(500).json({ success: false, message: 'Something went wrong while loading driver profile' });
     }
-  }
-);
 
+    if (!driver) {
+      return res.status(404).json({ success: false, message: 'Driver profile not found' });
+    }
+
+    return res.json({
+      success: true,
+      driver: {
+        id: driver.users?.id || driver.user_id,
+        full_name: driver.users?.full_name || null,
+        email: driver.users?.email || null,
+        phone: driver.users?.phone || null,
+        profile_image: driver.users?.profile_image || null,
+        driver_license_number: driver.driver_license_number || null,
+        vehicle_number: driver.vehicle_number || null,
+        vehicle_type: driver.vehicle_type || null,
+        is_available: Boolean(driver.is_available),
+        destination_id: driver.destination_id || null,
+        total_trips: Number(driver.total_trips) || 0,
+        total_earnings: Number(driver.total_earnings) || 0,
+        updated_at: driver.updated_at || null,
+      },
+    });
+  } catch (error) {
+    console.error('Driver profile error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong while loading driver profile' });
+  }
+});
 
 // ============================================================
 // GET DRIVER AVAILABILITY
 // ============================================================
 
-router.get(
-  '/availability',
-  authMiddleware,
-  driverOnly,
-  async (req, res) => {
-    try {
-      const {
-        data: driver,
-        error,
-      } = await supabase
-        .from('driver_profiles')
-        .select(`
-          is_available,
-          destination_id,
-          destinations:destination_id (
-            id,
-            name,
-            fare
-          )
-        `)
-        .eq('user_id', req.user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Driver availability error:', error);
-
-        return res.status(500).json({
-          success: false,
-          message: 'Something went wrong while loading availability',
-        });
-      }
-
-      if (!driver) {
-        return res.status(404).json({
-          success: false,
-          message: 'Driver profile not found',
-        });
-      }
-
-      return res.json({
-        success: true,
-
-        availability: {
-          is_available:
-            Boolean(driver.is_available),
-
-          destination_id:
-            driver.destination_id || null,
-
-          destination_name:
-            driver.destinations?.name || null,
-
-          destination_fare:
-            driver.destinations?.fare != null
-              ? Number(driver.destinations.fare)
-              : null,
-        },
-      });
-
-    } catch (error) {
-      console.error('Driver availability error:', error);
-
-      return res.status(500).json({
-        success: false,
-        message: 'Something went wrong while loading availability',
-      });
-    }
-  }
-);
-
-
-// ============================================================
-// UPDATE DRIVER AVAILABILITY
-// ============================================================
-
-router.post(
-  '/availability',
-  authMiddleware,
-  driverOnly,
-  async (req, res) => {
-    try {
-      const {
-        destination_id,
+router.get('/availability', authMiddleware, driverOnly, async (req, res) => {
+  try {
+    const { data: driver, error } = await supabase
+      .from('driver_profiles')
+      .select(`
         is_available,
-      } = req.body;
-
-
-      if (
-        is_available === true &&
-        !destination_id
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: 'Select a destination before becoming available',
-        });
-      }
-
-
-      if (destination_id) {
-        const {
-          data: destination,
-          error: destinationError,
-        } = await supabase
-          .from('destinations')
-          .select(`
-            id,
-            name,
-            fare
-          `)
-          .eq(
-            'id',
-            Number(destination_id)
-          )
-          .eq(
-            'is_active',
-            true
-          )
-          .maybeSingle();
-
-        if (destinationError) {
-          console.error(
-            'Destination lookup error:',
-            destinationError
-          );
-
-          return res.status(500).json({
-            success: false,
-            message: 'Could not verify selected destination',
-          });
-        }
-
-        if (!destination) {
-          return res.status(404).json({
-            success: false,
-            message: 'Selected destination not found',
-          });
-        }
-      }
-
-
-      let updateData;
-
-      if (is_available === true) {
-        updateData = {
-          destination_id: Number(destination_id),
-          is_available: true,
-        };
-      } else {
-        updateData = {
-          is_available: false,
-        };
-      }
-
-
-      const {
-        error: updateError,
-      } = await supabase
-        .from('driver_profiles')
-        .update(updateData)
-        .eq(
-          'user_id',
-          req.user.id
-        );
-
-      if (updateError) {
-        console.error(
-          'Update availability error:',
-          updateError
-        );
-
-        return res.status(500).json({
-          success: false,
-          message: 'Could not update driver availability',
-        });
-      }
-
-
-      const {
-        data: updated,
-        error: updatedError,
-      } = await supabase
-        .from('driver_profiles')
-        .select(`
-          is_available,
-          destination_id,
-          destinations:destination_id (
-            id,
-            name,
-            fare
-          )
-        `)
-        .eq(
-          'user_id',
-          req.user.id
-        )
-        .maybeSingle();
-
-      if (updatedError) {
-        console.error(
-          'Updated availability lookup error:',
-          updatedError
-        );
-
-        return res.status(500).json({
-          success: false,
-          message:
-            'Availability was updated but could not be loaded',
-        });
-      }
-
-
-      return res.json({
-        success: true,
-
-        message:
-          is_available === true
-            ? 'You are now available for passengers'
-            : 'You are now unavailable',
-
-        availability: {
-          is_available:
-            Boolean(updated?.is_available),
-
-          destination_id:
-            updated?.destination_id || null,
-
-          destination_name:
-            updated?.destinations?.name || null,
-
-          destination_fare:
-            updated?.destinations?.fare != null
-              ? Number(updated.destinations.fare)
-              : null,
-        },
-      });
-
-    } catch (error) {
-      console.error(
-        'Update availability error:',
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          'Something went wrong while updating availability',
-      });
-    }
-  }
-);
-
-
-// ============================================================
-// GET DRIVER TRIP HISTORY
-// ============================================================
-
-router.get(
-  '/history',
-  authMiddleware,
-  driverOnly,
-  async (req, res) => {
-    try {
-      const {
-        data: trips,
-        error,
-      } = await supabase
-        .from('trips')
-        .select(`
-          id,
-          driver_id,
-          destination_id,
-          status,
-          started_at,
-          completed_at,
-          created_at,
-          destinations:destination_id (
-            id,
-            name,
-            fare,
-            estimated_minutes
-          )
-        `)
-        .eq(
-          'driver_id',
-          req.user.id
-        )
-        .order(
-          'id',
-          {
-            ascending: false,
-          }
-        );
-
-      if (error) {
-        console.error(
-          'Driver history error:',
-          error
-        );
-
-        return res.status(500).json({
-          success: false,
-          message:
-            'Something went wrong while loading trip history',
-        });
-      }
-
-      return res.json({
-        success: true,
-
-        trips:
-          (trips || []).map(
-            (trip) => ({
-              id:
-                trip.id,
-
-              driver_id:
-                trip.driver_id,
-
-              destination_id:
-                trip.destination_id,
-
-              status:
-                trip.status,
-
-              started_at:
-                trip.started_at,
-
-              completed_at:
-                trip.completed_at,
-
-              created_at:
-                trip.created_at,
-
-              destination_name:
-                trip.destinations?.name || null,
-
-              fare:
-                trip.destinations?.fare != null
-                  ? Number(
-                      trip.destinations.fare
-                    )
-                  : 0,
-
-              estimated_minutes:
-                trip.destinations?.estimated_minutes ?? null,
-            })
-          ),
-      });
-
-    } catch (error) {
-      console.error(
-        'Driver history error:',
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          'Something went wrong while loading trip history',
-      });
-    }
-  }
-);
-
-
-// ============================================================
-// GET DRIVER EARNINGS
-// ============================================================
-
-router.get(
-  '/earnings',
-  authMiddleware,
-  driverOnly,
-  async (req, res) => {
-    try {
-      const {
-        data: earnings,
-        error,
-      } = await supabase
-        .from('driver_earnings')
-        .select(`
-          id,
-          driver_id,
-          ticket_id,
-          trip_id,
-          amount,
-          status,
-          tickets:ticket_id (
-            id,
-            ticket_reference,
-            destination_id,
-            destinations:destination_id (
-              id,
-              name,
-              fare
-            )
-          )
-        `)
-        .eq(
-          'driver_id',
-          req.user.id
-        )
-        .order(
-          'id',
-          {
-            ascending: false,
-          }
-        );
-
-      if (error) {
-        console.error(
-          'Driver earnings error:',
-          error
-        );
-
-        return res.status(500).json({
-          success: false,
-          message:
-            'Something went wrong while loading driver earnings',
-        });
-      }
-
-
-      const formattedEarnings =
-        (earnings || []).map(
-          (earning) => ({
-            id:
-              earning.id,
-
-            amount:
-              Number(
-                earning.amount
-              ) || 0,
-
-            status:
-              earning.status || null,
-
-            ticket_reference:
-              earning.tickets
-                ?.ticket_reference || null,
-
-            destination_name:
-              earning.tickets
-                ?.destinations
-                ?.name || null,
-
-            trip_id:
-              earning.trip_id || null,
-
-            ticket_id:
-              earning.ticket_id || null,
-          })
-        );
-
-
-      const totalEarnings =
-        formattedEarnings.reduce(
-          (
-            total,
-            earning
-          ) => {
-            if (
-              earning.status !==
-              'cancelled'
-            ) {
-              return (
-                total +
-                earning.amount
-              );
-            }
-
-            return total;
-          },
-          0
-        );
-
-
-      const totalValidatedTickets =
-        formattedEarnings.filter(
-          (earning) =>
-            earning.status !==
-            'cancelled'
-        ).length;
-
-
-      return res.json({
-        success: true,
-
-        summary: {
-          total_validated_tickets:
-            totalValidatedTickets,
-
-          total_earnings:
-            totalEarnings,
-        },
-
-        earnings:
-          formattedEarnings,
-      });
-
-    } catch (error) {
-      console.error(
-        'Driver earnings error:',
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          'Something went wrong while loading driver earnings',
-      });
-    }
-  }
-);
-
-
-// ============================================================
-// GET AVAILABLE DRIVERS FOR PASSENGERS
-// ============================================================
-
-router.get(
-  '/available',
-  authMiddleware,
-  async (req, res) => {
-    try {
-      const {
         destination_id,
-      } = req.query;
-
-      if (!destination_id) {
-        return res.status(400).json({
-          success: false,
-          message: 'Destination is required',
-        });
-      }
-
-      const destinationId =
-        Number(destination_id);
-
-      if (
-        !Number.isInteger(destinationId) ||
-        destinationId <= 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid destination',
-        });
-      }
-
-      const {
-        data: destination,
-        error: destinationError,
-      } = await supabase
-        .from('destinations')
-        .select(`
+        destinations:destination_id (
           id,
           name,
-          fare,
-          description
-        `)
-        .eq(
-          'id',
-          destinationId
+          fare
         )
-        .eq(
-          'is_active',
-          true
-        )
-        .maybeSingle();
+      `)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
 
-      if (destinationError) {
-        console.error(
-          'Destination lookup error:',
-          destinationError
-        );
+    if (error) {
+      console.error('Driver availability error:', error);
+      return res.status(500).json({ success: false, message: 'Something went wrong while loading availability' });
+    }
 
-        return res.status(500).json({
-          success: false,
-          message:
-            'Something went wrong while loading destination',
-        });
-      }
+    if (!driver) {
+      return res.status(404).json({ success: false, message: 'Driver profile not found' });
+    }
 
-      if (!destination) {
-        return res.status(404).json({
-          success: false,
-          message: 'Destination not found',
-        });
-      }
+    return res.json({
+      success: true,
+      availability: {
+        is_available: Boolean(driver.is_available),
+        destination_id: driver.destination_id || null,
+        destination_name: driver.destinations?.name || null,
+        destination_fare: driver.destinations?.fare != null ? Number(driver.destinations.fare) : null,
+      },
+    });
+  } catch (error) {
+    console.error('Driver availability error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong while loading availability' });
+  }
+});
 
-      const {
-        data: driverProfiles,
-        error: driverError,
-      } = await supabase
-        .from('driver_profiles')
-        .select(`
-          user_id,
-          vehicle_number,
-          vehicle_type,
-          is_available,
-          destination_id
-        `)
-        .eq(
-          'destination_id',
-          destinationId
-        )
-        .eq(
-          'is_available',
-          true
-        );
+// ============================================================
+// UPDATE DRIVER AVAILABILITY (Fixed Crash)
+// ============================================================
 
-      if (driverError) {
-        console.error(
-          'Available drivers query error:',
-          driverError
-        );
+router.post('/availability', authMiddleware, driverOnly, async (req, res) => {
+  try {
+    const { destination_id, is_available } = req.body;
 
-        return res.status(500).json({
-          success: false,
-          message:
-            'Something went wrong while loading available drivers',
-        });
-      }
-
-      if (
-        !driverProfiles ||
-        driverProfiles.length === 0
-      ) {
-        return res.json({
-          success: true,
-
-          destination: {
-            id:
-              destination.id,
-
-            name:
-              destination.name,
-
-            fare:
-              Number(
-                destination.fare
-              ) || 0,
-          },
-
-          drivers: [],
-        });
-      }
-
-      const driverIds =
-        driverProfiles.map(
-          (driver) =>
-            driver.user_id
-        );
-
-      const {
-        data: users,
-        error: userError,
-      } = await supabase
-        .from('users')
-        .select(`
-          id,
-          full_name,
-          email,
-          phone,
-          role,
-          profile_image,
-          is_active
-        `)
-        .in(
-          'id',
-          driverIds
-        )
-        .eq(
-          'role',
-          'driver'
-        )
-        .eq(
-          'is_active',
-          true
-        );
-
-      if (userError) {
-        console.error(
-          'Available driver users query error:',
-          userError
-        );
-
-        return res.status(500).json({
-          success: false,
-          message:
-            'Something went wrong while loading available drivers',
-        });
-      }
-
-      const drivers =
-        driverProfiles
-          .map(
-            (profile) => {
-              const user =
-                users.find(
-                  (item) =>
-                    Number(
-                      item.id
-                    ) ===
-                    Number(
-                      profile.user_id
-                    )
-                );
-
-              if (!user) {
-                return null;
-              }
-
-              return {
-                id:
-                  user.id,
-
-                full_name:
-                  user.full_name,
-
-                email:
-                  user.email,
-
-                phone:
-                  user.phone,
-
-                profile_image:
-                  user.profile_image ||
-                  null,
-
-                vehicle_number:
-                  profile.vehicle_number || null,
-
-                vehicle_type:
-                  profile.vehicle_type || null,
-
-                is_available:
-                  Boolean(
-                    profile.is_available
-                  ),
-
-                destination_id:
-                  destination.id,
-
-                destination_name:
-                  destination.name,
-
-                fare:
-                  Number(
-                    destination.fare
-                  ) || 0,
-              };
-            }
-          )
-          .filter(Boolean);
-
-      return res.json({
-        success: true,
-
-        destination: {
-          id:
-            destination.id,
-
-          name:
-            destination.name,
-
-          fare:
-            Number(
-              destination.fare
-            ) || 0,
-        },
-
-        drivers,
-      });
-
-    } catch (error) {
-      console.error(
-        'Available drivers error:',
-        error
-      );
-
-      return res.status(500).json({
+    if (is_available === true && !destination_id) {
+      return res.status(400).json({
         success: false,
-        message:
-          'Something went wrong while loading available drivers',
+        message: 'Select a destination before becoming available',
       });
     }
-  }
-);
 
+    let updateData = {
+      is_available: Boolean(is_available),
+    };
+
+    if (destination_id) {
+      updateData.destination_id = Number(destination_id);
+    }
+
+    if (is_available === false) {
+      updateData.destination_id = null;
+    }
+
+    const { error: updateError } = await supabase
+      .from('driver_profiles')
+      .update(updateData)
+      .eq('user_id', req.user.id);
+
+    if (updateError) {
+      console.error('Update availability error:', updateError);
+      return res.status(500).json({ success: false, message: 'Could not update driver availability' });
+    }
+
+    // Also update vehicle active status if going offline
+    if (is_available === false) {
+      await supabase
+        .from('vehicles')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('current_driver_id', req.user.id);
+    }
+
+    return res.json({
+      success: true,
+      message: is_available === true ? 'You are now available for passengers' : 'You are now unavailable',
+    });
+  } catch (error) {
+    console.error('Update availability error:', error);
+    return res.status(500).json({ success: false, message: 'Something went wrong while updating availability' });
+  }
+});
 
 // ============================================================
 // GET ALL VEHICLES (01 to 20) FOR DRIVER SELECTION
@@ -948,7 +202,6 @@ router.get('/vehicles', authMiddleware, driverOnly, async (req, res) => {
   }
 });
 
-
 // ============================================================
 // DRIVER SELECTS A VEHICLE (01 to 20)
 // ============================================================
@@ -961,6 +214,12 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
     if (!vehicle_id) {
       return res.status(400).json({ success: false, message: 'Vehicle ID is required' });
     }
+
+    // Unassign driver from any other vehicle first to prevent duplicates
+    await supabase
+      .from('vehicles')
+      .update({ current_driver_id: null, is_active: false })
+      .eq('current_driver_id', driver_id);
 
     const { data: updatedVehicle, error: vehicleError } = await supabase
       .from('vehicles')
@@ -990,17 +249,17 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
 });
 
 // ============================================================
-// GET ACTIVE VEHICLES FOR PASSENGERS (Extracts exact driver username/identity)
+// GET ACTIVE VEHICLES FOR PASSENGERS (Strictly Filters Available & Online Only)
 // ============================================================
 
 router.get('/active-vehicles', authMiddleware, async (req, res) => {
   try {
     const { destination_id } = req.query;
 
-    // 1. Fetch active vehicles checked in with a driver
+    // 1. Fetch active vehicles with checked-in drivers
     const { data: vehicles, error: vehicleError } = await supabase
       .from('vehicles')
-      .select('*')
+      .select('*, trips(*)')
       .eq('is_active', true)
       .not('current_driver_id', 'is', null);
 
@@ -1013,44 +272,54 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
       return res.json({ success: true, vehicles: [] });
     }
 
-    // 2. Extract driver user IDs
     const driverIds = vehicles.map(v => v.current_driver_id).filter(Boolean);
 
-    // 3. Fetch driver profiles and user table fields
+    // 2. Fetch driver profiles to check if they are *truly* available (`is_available = true`) and match destination
     const { data: driverProfiles } = await supabase
       .from('driver_profiles')
-      .select('user_id, destination_id, driver_license_number')
-      .in('user_id', driverIds);
+      .select('user_id, destination_id, is_available')
+      .in('user_id', driverIds)
+      .eq('is_available', true);
 
+    const availableDriverIds = new Set((driverProfiles || []).map(p => p.user_id));
+
+    // 3. Fetch user names
     const { data: users } = await supabase
       .from('users')
-      .select('id, full_name, email, phone')
+      .select('id, full_name, email, username')
       .in('id', driverIds);
 
-    // 4. Combine data and determine exact driver username/handle
+    // 4. Format and strictly filter out offline drivers or destination mismatches
     const formattedVehicles = vehicles.map(vehicle => {
+      // If driver is not actually available in driver_profiles, skip them entirely
+      if (!availableDriverIds.has(vehicle.current_driver_id)) {
+        return null;
+      }
+
       const profile = (driverProfiles || []).find(p => p.user_id === vehicle.current_driver_id);
       const user = (users || []).find(u => u.id === vehicle.current_driver_id);
 
-      // Filter by destination if requested
       if (destination_id && Number(profile?.destination_id) !== Number(destination_id)) {
         return null;
       }
 
-      // Determine best username display:
-      // 1. user.username (if present on table)
-      // 2. user.full_name
-      // 3. email prefix (e.g. "john" from "john@gmail.com")
-      const emailPrefix = user?.email ? user.email.split('@')[0] : null;
-      const exactDriverName = user?.username || user?.full_name || emailPrefix || `Driver_${vehicle.current_driver_id}`;
+      const activeTrip = vehicle.trips?.find(trip => trip.completed_at === null);
+      const bookedSeats = activeTrip ? Number(activeTrip.total_booked_seats || 0) : 0;
+      const availableSeats = Math.max(0, 10 - bookedSeats);
+
+      if (availableSeats <= 0) {
+        return null; // Skip full vehicles
+      }
+
+      const displayName = user?.username || user?.full_name || user?.email?.split('@')[0] || 'Driver';
 
       return {
         vehicle_id: vehicle.id,
         vehicle_number: vehicle.vehicle_number || `Vehicle ${vehicle.id}`,
         driver_id: vehicle.current_driver_id,
-        driver_name: exactDriverName,
+        driver_name: displayName,
         destination_id: profile?.destination_id || null,
-        available_seats: 10,
+        available_seats: availableSeats,
       };
     }).filter(Boolean);
 
@@ -1058,49 +327,6 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Active vehicles endpoint error:', error);
     return res.status(500).json({ success: false, message: 'Server error while fetching active vehicles' });
-  }
-});
-
-// ============================================================
-// ISSUE REPORTING (Passengers & Drivers)
-// ============================================================
-
-router.post('/report-issue', authMiddleware, async (req, res) => {
-  try {
-    const { category, description } = req.body;
-    const reporter_id = req.user.id;
-    const reporter_role = req.user.role;
-
-    if (!category || !description) {
-      return res.status(400).json({ success: false, message: 'Category and description are required' });
-    }
-
-    const { data: newReport, error: reportError } = await supabase
-      .from('reports')
-      .insert({
-        reporter_id,
-        reporter_role: reporter_role || 'passenger',
-        category,
-        description,
-        status: 'pending',
-        created_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (reportError) {
-      console.error('Report issue error:', reportError);
-      return res.status(400).json({ success: false, message: 'Could not submit issue report' });
-    }
-
-    return res.status(201).json({
-      success: true,
-      message: 'Issue reported successfully. Admin will review shortly.',
-      report: newReport
-    });
-  } catch (error) {
-    console.error('Report issue endpoint error:', error);
-    return res.status(500).json({ success: false, message: 'Server error while reporting issue' });
   }
 });
 

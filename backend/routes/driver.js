@@ -291,24 +291,30 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
       .select('*')
       .in('current_driver_id', driverIds);
 
-    // 4. Build response array
-    const result = availableDrivers.map(profile => {
+    // Inside /active-vehicles endpoint:
+const result = availableDrivers.map(profile => {
       const user = (users || []).find(u => u.id === profile.user_id);
       const vehicle = (vehicles || []).find(v => v.current_driver_id === profile.user_id);
 
-      const displayName = user?.username || user?.full_name || user?.email?.split('@')[0] || 'Driver';
-      const vehNumber = vehicle?.vehicle_number || profile.vehicle_number || 'Fleet Bus';
+      // Prioritize username -> email prefix -> driver fallback
+      const username = user?.username || user?.email?.split('@')[0] || 'driver';
+      
+      // Grab exact vehicle number selected by driver (e.g. "01", "02")
+      const vehicleNumber = vehicle?.vehicle_number || profile.vehicle_number || '01';
 
       return {
-        vehicle_id: vehicle?.id || profile.user_id,
-        vehicle_number: vehNumber,
+        id: vehicle?.id || profile.user_id,
         driver_id: profile.user_id,
-        driver_name: displayName,
+        vehicle_id: vehicle?.id,
+        driver_name: username, // Sent to frontend as clean username
+        username: username,
+        vehicle_number: vehicleNumber,
+        is_available: true,
         destination_id: profile.destination_id,
         available_seats: 10,
       };
     });
-
+    
     return res.json({ success: true, vehicles: result });
   } catch (error) {
     console.error('Active vehicles endpoint error:', error);

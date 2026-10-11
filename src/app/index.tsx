@@ -28,6 +28,7 @@ type Destination = {
 type Driver = {
   id: number;
   full_name: string;
+  username: string;
   phone: string | null;
   vehicle_number: string | null;
   vehicle_type: string | null;
@@ -37,7 +38,6 @@ type Driver = {
   fare: number;
   vehicle_id?: number;
   driver_id?: number;
-  driver_custom_id?: string;
   available_seats?: number;
 };
 
@@ -142,21 +142,28 @@ export default function HomeScreen() {
 
       const data = await response.json();
 
-      if (data.success && data.vehicles) {
-        const mapped = data.vehicles.map((v: any) => ({
-          id: v.driver_id || v.vehicle_id,
-          driver_id: v.driver_id,
-          vehicle_id: v.vehicle_id,
-          full_name: v.driver_name || 'Driver',
-          phone: null,
-          vehicle_number: v.vehicle_number || `Vehicle ${v.vehicle_id}`,
-          vehicle_type: 'Fleet Vehicle',
-          is_available: true,
-          destination_id: destinationId,
-          destination_name: selectedDestination?.name || '',
-          fare: selectedDestination?.fare || 0,
-          available_seats: v.available_seats ?? 10,
-        }));
+if (data.success && data.vehicles) {
+        const mapped = data.vehicles.map((v: any) => {
+          const rawName = v.driver_name || v.username || 'driver';
+          const cleanUsername = rawName.startsWith('@') ? rawName.slice(1) : rawName;
+          const vehNo = v.vehicle_number || (v.vehicle_id ? `Vehicle ${v.vehicle_id}` : 'Unassigned');
+
+          return {
+            id: v.driver_id || v.vehicle_id,
+            driver_id: v.driver_id,
+            vehicle_id: v.vehicle_id,
+            full_name: cleanUsername,
+            username: cleanUsername,
+            phone: null,
+            vehicle_number: vehNo,
+            vehicle_type: `Vehicle ${vehNo}`,
+            is_available: true,
+            destination_id: destinationId,
+            destination_name: selectedDestination?.name || '',
+            fare: selectedDestination?.fare || 0,
+            available_seats: v.available_seats ?? 10,
+          };
+        });
 
         setDrivers(mapped);
       } else {
@@ -246,7 +253,7 @@ export default function HomeScreen() {
 
       Alert.alert(
         'Payment Successful',
-        `Fare of ₦${fare.toLocaleString()} paid at ${formattedTime}. Driver: ${selectedDriver.full_name}.`,
+        `Fare of ₦${fare.toLocaleString()} paid at ${formattedTime}. Driver: @${selectedDriver.username}.`,
         [
           {
             text: 'View QR Ticket',
@@ -479,6 +486,7 @@ export default function HomeScreen() {
             </Text>
           </View>
         )}
+
         {/* AVAILABLE DRIVERS */}
         <View style={styles.driverHeader}>
           <Text style={styles.sectionTitle}>Available Drivers</Text>
@@ -523,14 +531,14 @@ export default function HomeScreen() {
               >
                 <View style={styles.driverAvatar}>
                   <Text style={styles.driverAvatarText}>
-                    {driver.full_name ? driver.full_name.charAt(0).toUpperCase() : '🚌'}
+                    {driver.username ? driver.username.charAt(0).toUpperCase() : '🚌'}
                   </Text>
                 </View>
 
                 <View style={styles.driverInfo}>
                   <Text style={styles.driverName}>
                     {driver.vehicle_number ? `${driver.vehicle_number} • ` : ''}
-                    {driver.full_name}
+                    @{driver.username}
                   </Text>
 
                   <Text style={styles.driverVehicle}>
@@ -564,11 +572,11 @@ export default function HomeScreen() {
 
             <Text style={styles.selectedDriverName}>
               {selectedDriver.vehicle_number ? `${selectedDriver.vehicle_number} • ` : ''}
-              {selectedDriver.full_name}
+              @{selectedDriver.username}
             </Text>
 
             <Text style={styles.selectedDriverDetails}>
-              Driver Identity: {selectedDriver.full_name}
+              Driver Username: @{selectedDriver.username}
             </Text>
 
             <View style={styles.paymentSummary}>
@@ -1091,7 +1099,7 @@ const styles = StyleSheet.create({
   },
   quickText: {
     fontSize: 12,
-    color: '#66736F',
+    color: '#6B756F',
     marginTop: 5,
     lineHeight: 18,
   },

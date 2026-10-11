@@ -20,6 +20,7 @@ router.post('/register', async (req, res) => {
       full_name,
       email,
       phone,
+      reg_or_p_number, // Handles Reg. Number for students, P Number for staff, etc.
       password,
       role,
     } = req.body;
@@ -63,6 +64,22 @@ router.post('/register', async (req, res) => {
     const cleanPhone =
       phone
         ? phone.trim()
+        : null;
+
+    const cleanRegOrPNumber =
+      reg_or_p_number
+        ? reg_or_p_number.trim()
+        : null;
+
+    // -----------------------------
+    // Approval & Driver ID Logic
+    // -----------------------------
+    // Passengers (Students, Staff, Others) are auto-approved (is_approved = true)
+    // Drivers require admin approval (is_approved = false) and get a unique ID
+    const isApproved = userRole === 'passenger';
+    const driverCustomId =
+      userRole === 'driver'
+        ? 'DRV-' + Math.floor(1000 + Math.random() * 9000)
         : null;
 
     // -----------------------------
@@ -122,9 +139,12 @@ router.post('/register', async (req, res) => {
         full_name: cleanName,
         email: cleanEmail,
         phone: cleanPhone,
+        reg_or_p_number: cleanRegOrPNumber,
         password: hashedPassword,
         role: userRole,
         is_active: true,
+        is_approved: isApproved,
+        driver_custom_id: driverCustomId,
       })
       .select(
         `
@@ -132,9 +152,12 @@ router.post('/register', async (req, res) => {
         full_name,
         email,
         phone,
+        reg_or_p_number,
         role,
         profile_image,
-        is_active
+        is_active,
+        is_approved,
+        driver_custom_id
         `
       )
       .single();
@@ -158,32 +181,20 @@ router.post('/register', async (req, res) => {
     // =====================================================
     // CREATE WALLET
     // =====================================================
-    //
-    // Passenger:
-    //     Starting balance = ₦500
-    //
-    // Driver:
-    //     Starting balance = ₦0
-    //
-    // =====================================================
 
     const startingBalance =
       userRole === 'passenger'
         ? 500
         : 0;
 
-// Create wallet
-const {
-  error: walletError,
-} = await supabase
-  .from('wallets')
-  .insert({
-    user_id: userId,
-    balance: userRole === 'passenger' ? 500 : 0,
-  });
-
-
-
+    const {
+      error: walletError,
+    } = await supabase
+      .from('wallets')
+      .insert({
+        user_id: userId,
+        balance: startingBalance,
+      });
 
     if (walletError) {
       console.error(
@@ -191,7 +202,6 @@ const {
         walletError
       );
 
-      // Remove user if wallet creation fails
       await supabase
         .from('users')
         .delete()
@@ -223,13 +233,11 @@ const {
           driverError
         );
 
-        // Remove wallet
         await supabase
           .from('wallets')
           .delete()
           .eq('user_id', userId);
 
-        // Remove user
         await supabase
           .from('users')
           .delete()
@@ -252,6 +260,7 @@ const {
         {
           id: userId,
           role: userRole,
+          is_approved: isApproved,
         },
         JWT_SECRET,
         {
@@ -266,7 +275,9 @@ const {
     return res.status(201).json({
       success: true,
       message:
-        'Account created successfully',
+        userRole === 'driver'
+          ? 'Account created successfully. Awaiting administrator approval.'
+          : 'Account created successfully',
 
       token,
 
@@ -283,8 +294,17 @@ const {
         phone:
           newUser.phone,
 
+        reg_or_p_number:
+          newUser.reg_or_p_number,
+
         role:
           newUser.role,
+
+        is_approved:
+          newUser.is_approved,
+
+        driver_custom_id:
+          newUser.driver_custom_id,
 
         profile_image:
           newUser.profile_image || null,
@@ -354,10 +374,13 @@ router.post('/login', async (req, res) => {
         full_name,
         email,
         phone,
+        reg_or_p_number,
         password,
         role,
         profile_image,
-        is_active
+        is_active,
+        is_approved,
+        driver_custom_id
         `
       )
       .eq('email', cleanEmail)
@@ -376,10 +399,6 @@ router.post('/login', async (req, res) => {
           'Could not access user account',
       });
     }
-
-    // -----------------------------
-    // User doesn't exist
-    // -----------------------------
 
     if (!user) {
       return res.status(401).json({
@@ -400,6 +419,18 @@ router.post('/login', async (req, res) => {
         success: false,
         message:
           'This account has been deactivated',
+      });
+    }
+
+    // Check if driver is approved by admin
+    if (
+      user.role === 'driver' &&
+      user.is_approved === false
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          'Your driver account is pending administrator approval',
       });
     }
 
@@ -430,6 +461,7 @@ router.post('/login', async (req, res) => {
         {
           id: user.id,
           role: user.role,
+          is_approved: user.is_approved,
         },
         JWT_SECRET,
         {
@@ -462,8 +494,17 @@ router.post('/login', async (req, res) => {
         phone:
           user.phone,
 
+        reg_or_p_number:
+          user.reg_or_p_number,
+
         role:
           user.role,
+
+        is_approved:
+          user.is_approved,
+
+        driver_custom_id:
+          user.driver_custom_id,
 
         profile_image:
           user.profile_image || null,

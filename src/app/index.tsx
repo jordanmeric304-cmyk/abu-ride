@@ -16,7 +16,6 @@ import {
 import abuLogo from '../../assets/images/abu-logo.png';
 
 const API_URL = 'https://abu-ride.onrender.com';
-
 type Destination = {
   id: number;
   name: string;
@@ -636,7 +635,7 @@ export default function HomeScreen() {
                   styles.fundButtonText
                 }
               >
-                Request Funds
+                Top Up
               </Text>
             </Pressable>
 
@@ -1168,18 +1167,6 @@ export default function HomeScreen() {
               }
             />
 
-            <TextInput
-              style={[
-                styles.input,
-                styles.noteInput,
-              ]}
-              placeholder="Note (optional)"
-              value={fundingNote}
-              onChangeText={
-                setFundingNote
-              }
-              multiline
-            />
 
             <View
               style={

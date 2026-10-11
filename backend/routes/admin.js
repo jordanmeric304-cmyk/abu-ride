@@ -1,5 +1,4 @@
 const express = require('express');
-const crypto = require('crypto');
 
 const supabase = require('../supabase');
 const authMiddleware = require('../middleware/auth');
@@ -24,607 +23,117 @@ const adminOnly = (req, res, next) => {
 
 
 // ============================================================
-// GET WALLET FUNDING REQUESTS
+// GET ALL USERS (View driver approval status & university IDs)
 // ============================================================
 
-router.get(
-  '/funding-requests',
-  authMiddleware,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const {
-        data: requests,
-        error,
-      } = await supabase
-        .from('funding_requests')
-        .select(`
-          id,
-          request_reference,
-          user_id,
-          amount,
-          note,
-          status,
-          admin_note,
-          created_at,
-          reviewed_at,
-          users:user_id (
-            full_name,
-            email
-          )
-        `)
-        .order('created_at', {
-          ascending: false,
-        });
+router.get('/users', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, full_name, email, phone, reg_or_p_number, role, is_active, is_approved, driver_custom_id, created_at')
+      .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error(
-          'Funding requests error:',
-          error
-        );
-
-        return res.status(500).json({
-          success: false,
-          message: 'Failed to load funding requests',
-        });
-      }
-
-      const formattedRequests =
-        (requests || []).map((request) => ({
-          id:
-            request.id,
-
-          request_reference:
-            request.request_reference,
-
-          user_id:
-            request.user_id,
-
-          full_name:
-            request.users?.full_name || null,
-
-          email:
-            request.users?.email || null,
-
-          amount:
-            Number(request.amount) || 0,
-
-          note:
-            request.note || null,
-
-          status:
-            request.status,
-
-          admin_note:
-            request.admin_note || null,
-
-          created_at:
-            request.created_at,
-
-          reviewed_at:
-            request.reviewed_at,
-        }));
-
-      // Put pending requests first
-      formattedRequests.sort((a, b) => {
-        if (
-          a.status === 'pending' &&
-          b.status !== 'pending'
-        ) {
-          return -1;
-        }
-
-        if (
-          a.status !== 'pending' &&
-          b.status === 'pending'
-        ) {
-          return 1;
-        }
-
-        return (
-          new Date(b.created_at) -
-          new Date(a.created_at)
-        );
-      });
-
-      return res.json({
-        success: true,
-        requests: formattedRequests,
-      });
-
-    } catch (error) {
-      console.error(
-        'Funding requests error:',
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to load funding requests',
-      });
+    if (error) {
+      console.error('Fetch admin users error:', error);
+      return res.status(400).json({ success: false, message: 'Could not fetch users' });
     }
+
+    return res.json({ success: true, users });
+  } catch (error) {
+    console.error('Admin users endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error fetching users' });
   }
-);
+});
 
 
 // ============================================================
-// APPROVE FUNDING REQUEST
+// APPROVE PENDING DRIVER & GENERATE CUSTOM ID
 // ============================================================
 
-router.post(
-  '/funding-requests/:id/approve',
-  authMiddleware,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const requestId =
-        Number(req.params.id);
+router.post('/approve-driver', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { driver_id } = req.body;
 
-      const adminNote =
-        req.body?.admin_note
-          ? String(req.body.admin_note).trim()
-          : null;
-
-      if (!requestId) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid funding request ID',
-        });
-      }
-
-
-      // --------------------------------------------------------
-      // GET FUNDING REQUEST
-      // --------------------------------------------------------
-
-      const {
-        data: request,
-        error: requestError,
-      } = await supabase
-        .from('funding_requests')
-        .select(`
-          id,
-          user_id,
-          amount,
-          status
-        `)
-        .eq('id', requestId)
-        .maybeSingle();
-
-      if (requestError) {
-        console.error(
-          'Funding request lookup error:',
-          requestError
-        );
-
-        return res.status(500).json({
-          success: false,
-          message: 'Could not load funding request',
-        });
-      }
-
-      if (!request) {
-        return res.status(404).json({
-          success: false,
-          message: 'Funding request not found',
-        });
-      }
-
-      if (request.status !== 'pending') {
-        return res.status(400).json({
-          success: false,
-          message:
-            'This funding request has already been reviewed',
-        });
-      }
-
-
-      // --------------------------------------------------------
-      // GET PASSENGER WALLET
-      // --------------------------------------------------------
-
-      const {
-        data: wallet,
-        error: walletError,
-      } = await supabase
-        .from('wallets')
-        .select(`
-          id,
-          user_id,
-          balance
-        `)
-        .eq('user_id', request.user_id)
-        .maybeSingle();
-
-      if (walletError) {
-        console.error(
-          'Wallet lookup error:',
-          walletError
-        );
-
-        return res.status(500).json({
-          success: false,
-          message: 'Could not load passenger wallet',
-        });
-      }
-
-      if (!wallet) {
-        return res.status(404).json({
-          success: false,
-          message: 'Passenger wallet not found',
-        });
-      }
-
-
-      // --------------------------------------------------------
-      // CALCULATE NEW BALANCE
-      // --------------------------------------------------------
-
-      const balanceBefore =
-        Number(wallet.balance) || 0;
-
-      const amountAdded =
-        Number(request.amount) || 0;
-
-      if (amountAdded <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid funding amount',
-        });
-      }
-
-      const balanceAfter =
-        balanceBefore + amountAdded;
-
-
-      // --------------------------------------------------------
-      // UPDATE WALLET
-      // --------------------------------------------------------
-
-      const {
-        error: walletUpdateError,
-      } = await supabase
-        .from('wallets')
-        .update({
-          balance: balanceAfter,
-        })
-        .eq('user_id', request.user_id);
-
-      if (walletUpdateError) {
-        console.error(
-          'Wallet update error:',
-          walletUpdateError
-        );
-
-        return res.status(500).json({
-          success: false,
-          message: 'Could not update passenger wallet',
-        });
-      }
-
-
-      // --------------------------------------------------------
-      // MARK FUNDING REQUEST APPROVED
-      // --------------------------------------------------------
-
-      const {
-        error: requestUpdateError,
-      } = await supabase
-        .from('funding_requests')
-        .update({
-          status: 'approved',
-          admin_note: adminNote,
-          reviewed_at:
-            new Date().toISOString(),
-        })
-        .eq('id', requestId)
-        .eq('status', 'pending');
-
-      if (requestUpdateError) {
-        console.error(
-          'Funding request update error:',
-          requestUpdateError
-        );
-
-        // Restore wallet
-        await supabase
-          .from('wallets')
-          .update({
-            balance: balanceBefore,
-          })
-          .eq('user_id', request.user_id);
-
-        return res.status(500).json({
-          success: false,
-          message:
-            'Could not approve funding request',
-        });
-      }
-
-
-      // --------------------------------------------------------
-      // CREATE TRANSACTION
-      // --------------------------------------------------------
-
-      const transactionReference =
-        `FUND-${Date.now()}-${crypto
-          .randomBytes(3)
-          .toString('hex')
-          .toUpperCase()}`;
-
-      const {
-        error: transactionError,
-      } = await supabase
-        .from('transactions')
-        .insert({
-          transaction_reference:
-            transactionReference,
-
-          user_id:
-            request.user_id,
-
-          type:
-            'wallet_funding',
-
-          amount:
-            amountAdded,
-
-          balance_before:
-            balanceBefore,
-
-          balance_after:
-            balanceAfter,
-
-          description:
-            'Wallet funding approved by administrator',
-
-          status:
-            'successful',
-        });
-
-      if (transactionError) {
-        console.error(
-          'Funding transaction error:',
-          transactionError
-        );
-      }
-
-
-      // --------------------------------------------------------
-      // NOTIFY PASSENGER
-      // --------------------------------------------------------
-
-      const {
-        error: notificationError,
-      } = await supabase
-        .from('notifications')
-        .insert({
-          user_id:
-            request.user_id,
-
-          title:
-            'Wallet Funded',
-
-          message:
-            `Your wallet has been credited with ₦${amountAdded.toLocaleString()}.`,
-
-          type:
-            'payment',
-        });
-
-      if (notificationError) {
-        console.error(
-          'Funding notification error:',
-          notificationError
-        );
-      }
-
-
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
-
-      return res.json({
-        success: true,
-
-        message:
-          'Funding request approved successfully',
-
-        wallet: {
-          amount_added:
-            amountAdded,
-
-          balance_before:
-            balanceBefore,
-
-          balance_after:
-            balanceAfter,
-        },
-
-        transaction: {
-          transaction_reference:
-            transactionReference,
-
-          amount:
-            amountAdded,
-        },
-      });
-
-    } catch (error) {
-      console.error(
-        'Approve funding error:',
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          'Failed to approve funding request',
-      });
+    if (!driver_id) {
+      return res.status(400).json({ success: false, message: 'Driver ID is required' });
     }
-  }
-);
 
+    const customDriverId = 'DRV-' + Math.floor(1000 + Math.random() * 9000);
 
-// ============================================================
-// REJECT FUNDING REQUEST
-// ============================================================
+    const { data: updatedDriver, error } = await supabase
+      .from('users')
+      .update({ 
+        is_approved: true,
+        driver_custom_id: customDriverId 
+      })
+      .eq('id', driver_id)
+      .eq('role', 'driver')
+      .select('id, full_name, email, is_approved, driver_custom_id')
+      .single();
 
-router.post(
-  '/funding-requests/:id/reject',
-  authMiddleware,
-  adminOnly,
-  async (req, res) => {
-    try {
-      const requestId =
-        Number(req.params.id);
-
-      const adminNote =
-        req.body?.admin_note
-          ? String(req.body.admin_note).trim()
-          : null;
-
-      if (!requestId) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid funding request ID',
-        });
-      }
-
-
-      // --------------------------------------------------------
-      // FIND REQUEST
-      // --------------------------------------------------------
-
-      const {
-        data: request,
-        error: requestError,
-      } = await supabase
-        .from('funding_requests')
-        .select(`
-          id,
-          user_id,
-          amount,
-          status
-        `)
-        .eq('id', requestId)
-        .maybeSingle();
-
-      if (requestError) {
-        console.error(
-          'Funding request lookup error:',
-          requestError
-        );
-
-        return res.status(500).json({
-          success: false,
-          message: 'Could not load funding request',
-        });
-      }
-
-      if (!request) {
-        return res.status(404).json({
-          success: false,
-          message: 'Funding request not found',
-        });
-      }
-
-      if (request.status !== 'pending') {
-        return res.status(400).json({
-          success: false,
-          message:
-            'This funding request has already been reviewed',
-        });
-      }
-
-
-      // --------------------------------------------------------
-      // REJECT REQUEST
-      // --------------------------------------------------------
-
-      const {
-        error: updateError,
-      } = await supabase
-        .from('funding_requests')
-        .update({
-          status: 'rejected',
-          admin_note: adminNote,
-          reviewed_at:
-            new Date().toISOString(),
-        })
-        .eq('id', requestId)
-        .eq('status', 'pending');
-
-      if (updateError) {
-        console.error(
-          'Reject funding update error:',
-          updateError
-        );
-
-        return res.status(500).json({
-          success: false,
-          message: 'Could not reject funding request',
-        });
-      }
-
-
-      // --------------------------------------------------------
-      // NOTIFY PASSENGER
-      // --------------------------------------------------------
-
-      const {
-        error: notificationError,
-      } = await supabase
-        .from('notifications')
-        .insert({
-          user_id:
-            request.user_id,
-
-          title:
-            'Funding Request Rejected',
-
-          message:
-            `Your ₦${Number(
-              request.amount
-            ).toLocaleString()} wallet funding request was rejected.`,
-
-          type:
-            'payment',
-        });
-
-      if (notificationError) {
-        console.error(
-          'Rejection notification error:',
-          notificationError
-        );
-      }
-
-
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
-
-      return res.json({
-        success: true,
-
-        message:
-          'Funding request rejected successfully',
-      });
-
-    } catch (error) {
-      console.error(
-        'Reject funding error:',
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          'Failed to reject funding request',
-      });
+    if (error) {
+      console.error('Approve driver error:', error);
+      return res.status(400).json({ success: false, message: 'Could not approve driver account' });
     }
+
+    return res.json({
+      success: true,
+      message: `Driver ${updatedDriver.full_name} (${updatedDriver.driver_custom_id}) approved successfully!`,
+      driver: updatedDriver,
+    });
+  } catch (error) {
+    console.error('Approve driver endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error approving driver' });
   }
-);
+});
+
+
+// ============================================================
+// GET FLEET OVERVIEW (Vehicles 01 to 20 Status)
+// ============================================================
+
+router.get('/fleet', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { data: vehicles, error } = await supabase
+      .from('vehicles')
+      .select('*, users:current_driver_id(full_name, email, driver_custom_id)')
+      .order('vehicle_number', { ascending: true });
+
+    if (error) {
+      console.error('Fetch fleet error:', error);
+      return res.status(400).json({ success: false, message: 'Could not fetch fleet overview' });
+    }
+
+    return res.json({ success: true, vehicles });
+  } catch (error) {
+    console.error('Fleet endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error fetching fleet overview' });
+  }
+});
+
+
+// ============================================================
+// GET SUBMITTED ISSUE REPORTS
+// ============================================================
+
+router.get('/reports', authMiddleware, adminOnly, async (req, res) => {
+  try {
+    const { data: reports, error } = await supabase
+      .from('reports')
+      .select('*, users:reporter_id(full_name, email, reg_or_p_number, role)')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch reports error:', error);
+      return res.status(400).json({ success: false, message: 'Could not fetch issue reports' });
+    }
+
+    return res.json({ success: true, reports });
+  } catch (error) {
+    console.error('Reports endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error fetching reports' });
+  }
+});
 
 
 // ============================================================
@@ -669,10 +178,6 @@ router.get(
       }
 
 
-      // --------------------------------------------------------
-      // GET DRIVER USERS
-      // --------------------------------------------------------
-
       const {
         data: drivers,
         error: driversError,
@@ -701,10 +206,6 @@ router.get(
         });
       }
 
-
-      // --------------------------------------------------------
-      // CALCULATE TOTALS
-      // --------------------------------------------------------
 
       const totalMap = {};
       const dailyMap = {};
@@ -754,10 +255,6 @@ router.get(
       });
 
 
-      // --------------------------------------------------------
-      // FORMAT DAILY EARNINGS
-      // --------------------------------------------------------
-
       const driverEarnings =
         (drivers || []).map((driver) => {
           const daily =
@@ -799,10 +296,6 @@ router.get(
         });
 
 
-      // --------------------------------------------------------
-      // TOTAL FOR ALL DRIVERS
-      // --------------------------------------------------------
-
       const totalAllDrivers =
         driverEarnings.reduce(
           (total, driver) =>
@@ -813,10 +306,6 @@ router.get(
           0
         );
 
-
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
 
       return res.json({
         success: true,

@@ -221,10 +221,6 @@ router.post(
       } = req.body;
 
 
-      // --------------------------------------------------------
-      // Driver becoming available
-      // --------------------------------------------------------
-
       if (
         is_available === true &&
         !destination_id
@@ -235,10 +231,6 @@ router.post(
         });
       }
 
-
-      // --------------------------------------------------------
-      // Verify destination
-      // --------------------------------------------------------
 
       if (destination_id) {
         const {
@@ -282,10 +274,6 @@ router.post(
       }
 
 
-      // --------------------------------------------------------
-      // Update driver profile
-      // --------------------------------------------------------
-
       let updateData;
 
       if (is_available === true) {
@@ -322,10 +310,6 @@ router.post(
         });
       }
 
-
-      // --------------------------------------------------------
-      // Get updated availability
-      // --------------------------------------------------------
 
       const {
         data: updated,
@@ -518,10 +502,6 @@ router.get(
 // ============================================================
 // GET DRIVER EARNINGS
 // ============================================================
-// IMPORTANT:
-// driver_earnings DOES NOT HAVE created_at.
-// Therefore we use id for ordering and do not request created_at.
-// ============================================================
 
 router.get(
   '/earnings',
@@ -577,10 +557,6 @@ router.get(
       }
 
 
-      // --------------------------------------------------------
-      // Format earnings
-      // --------------------------------------------------------
-
       const formattedEarnings =
         (earnings || []).map(
           (earning) => ({
@@ -613,10 +589,6 @@ router.get(
         );
 
 
-      // --------------------------------------------------------
-      // Calculate total earnings
-      // --------------------------------------------------------
-
       const totalEarnings =
         formattedEarnings.reduce(
           (
@@ -638,10 +610,6 @@ router.get(
           0
         );
 
-
-      // --------------------------------------------------------
-      // Calculate validated tickets
-      // --------------------------------------------------------
 
       const totalValidatedTickets =
         formattedEarnings.filter(
@@ -695,16 +663,6 @@ router.get(
         destination_id,
       } = req.query;
 
-      console.log(
-        'Checking available drivers for destination:',
-        destination_id
-      );
-
-
-      // --------------------------------------------------------
-      // Validate destination
-      // --------------------------------------------------------
-
       if (!destination_id) {
         return res.status(400).json({
           success: false,
@@ -724,11 +682,6 @@ router.get(
           message: 'Invalid destination',
         });
       }
-
-
-      // --------------------------------------------------------
-      // Verify destination exists and is active
-      // --------------------------------------------------------
 
       const {
         data: destination,
@@ -771,11 +724,6 @@ router.get(
         });
       }
 
-
-      // --------------------------------------------------------
-      // Get available drivers
-      // --------------------------------------------------------
-
       const {
         data: driverProfiles,
         error: driverError,
@@ -810,20 +758,10 @@ router.get(
         });
       }
 
-
-      // --------------------------------------------------------
-      // No available drivers
-      // --------------------------------------------------------
-
       if (
         !driverProfiles ||
         driverProfiles.length === 0
       ) {
-        console.log(
-          'No available drivers found for destination:',
-          destination.name
-        );
-
         return res.json({
           success: true,
 
@@ -844,17 +782,11 @@ router.get(
         });
       }
 
-
-      // --------------------------------------------------------
-      // Get driver users
-      // --------------------------------------------------------
-
       const driverIds =
         driverProfiles.map(
           (driver) =>
             driver.user_id
         );
-
 
       const {
         data: users,
@@ -895,11 +827,6 @@ router.get(
             'Something went wrong while loading available drivers',
         });
       }
-
-
-      // --------------------------------------------------------
-      // Combine driver profile + user
-      // --------------------------------------------------------
 
       const drivers =
         driverProfiles
@@ -963,12 +890,6 @@ router.get(
           )
           .filter(Boolean);
 
-
-      console.log(
-        `Found ${drivers.length} available driver(s) for ${destination.name}`
-      );
-
-
       return res.json({
         success: true,
 
@@ -1002,6 +923,146 @@ router.get(
     }
   }
 );
+
+
+// ============================================================
+// NEW: GET ALL VEHICLES (01 to 20) FOR DRIVER SELECTION
+// ============================================================
+
+router.get('/vehicles', authMiddleware, driverOnly, async (req, res) => {
+  try {
+    const { data: vehicles, error } = await supabase
+      .from('vehicles')
+      .select('*')
+      .order('vehicle_number', { ascending: true });
+
+    if (error) {
+      console.error('Fetch vehicles error:', error);
+      return res.status(400).json({ success: false, message: 'Could not fetch vehicles' });
+    }
+
+    return res.json({ success: true, vehicles });
+  } catch (error) {
+    console.error('Vehicles endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while fetching vehicles' });
+  }
+});
+
+
+// ============================================================
+// NEW: DRIVER SELECTS A VEHICLE (01 to 20)
+// ============================================================
+
+router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
+  try {
+    const { vehicle_id } = req.body;
+    const driver_id = req.user.id;
+
+    if (!vehicle_id) {
+      return res.status(400).json({ success: false, message: 'Vehicle ID is required' });
+    }
+
+    const { data: updatedVehicle, error: vehicleError } = await supabase
+      .from('vehicles')
+      .update({
+        current_driver_id: driver_id,
+        is_active: true,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', vehicle_id)
+      .select()
+      .single();
+
+    if (vehicleError) {
+      console.error('Select vehicle error:', vehicleError);
+      return res.status(400).json({ success: false, message: 'Could not assign vehicle' });
+    }
+
+    return res.json({
+      success: true,
+      message: `Successfully checked into ${updatedVehicle.vehicle_number}`,
+      vehicle: updatedVehicle
+    });
+  } catch (error) {
+    console.error('Select vehicle endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error during vehicle selection' });
+  }
+});
+
+
+// ============================================================
+// NEW: GET ACTIVE VEHICLES FOR PASSENGERS (Auto-Hides Full Vehicles)
+// ============================================================
+
+router.get('/active-vehicles', authMiddleware, async (req, res) => {
+  try {
+    const { data: vehicles, error } = await supabase
+      .from('vehicles')
+      .select('*, trips(*)')
+      .eq('is_active', true);
+
+    if (error) {
+      console.error('Fetch active vehicles error:', error);
+      return res.status(400).json({ success: false, message: 'Could not fetch active vehicles' });
+    }
+
+    // Filter out vehicles that have reached the 10-seat limit
+    const availableVehicles = vehicles.filter(vehicle => {
+      const activeTrip = vehicle.trips?.find(trip => trip.completed_at === null);
+      const bookedSeats = activeTrip ? activeTrip.total_booked_seats : 0;
+      return bookedSeats < 10;
+    });
+
+    return res.json({ success: true, vehicles: availableVehicles });
+  } catch (error) {
+    console.error('Active vehicles endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while fetching active vehicles' });
+  }
+});
+
+
+// ============================================================
+// NEW: ISSUE REPORTING (Passengers & Drivers)
+// ============================================================
+
+router.post('/report-issue', authMiddleware, async (req, res) => {
+  try {
+    const { category, description } = req.body;
+    const reporter_id = req.user.id;
+    const reporter_role = req.user.role;
+
+    if (!category || !description) {
+      return res.status(400).json({ success: false, message: 'Category and description are required' });
+    }
+
+    const { data: newReport, error: reportError } = await supabase
+      .from('reports')
+      .insert({
+        reporter_id,
+        reporter_role: reporter_role || 'passenger',
+        category,
+        description,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (reportError) {
+      console.error('Report issue error:', reportError);
+      return res.status(400).json({ success: false, message: 'Could not submit issue report' });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Issue reported successfully. Admin will review shortly.',
+      report: newReport
+    });
+  } catch (error) {
+    console.error('Report issue endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while reporting issue' });
+  }
+});
 
 
 module.exports = router;

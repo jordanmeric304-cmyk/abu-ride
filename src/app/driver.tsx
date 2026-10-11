@@ -3,15 +3,15 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 import abuLogo from '../../assets/images/abu-logo.png';
@@ -40,12 +40,25 @@ type Destination = {
   estimated_minutes: number | null;
 };
 
+type Vehicle = {
+  id: number;
+  vehicle_number: string;
+  is_active: boolean;
+  current_driver_id: number | null;
+};
+
 export default function DriverDashboard() {
   const [driver, setDriver] =
     useState<DriverProfile | null>(null);
 
   const [destinations, setDestinations] =
     useState<Destination[]>([]);
+
+  const [vehicles, setVehicles] =
+    useState<Vehicle[]>([]);
+
+  const [selectedVehicle, setSelectedVehicle] =
+    useState<Vehicle | null>(null);
 
   const [selectedDestination, setSelectedDestination] =
     useState<Destination | null>(null);
@@ -66,7 +79,7 @@ export default function DriverDashboard() {
     return await SecureStore.getItemAsync('auth_token');
   };
 
-  const loadDriverData = async () => {
+ const loadDriverData = async () => {
     try {
       const token = await getToken();
 
@@ -75,101 +88,70 @@ export default function DriverDashboard() {
         return;
       }
 
+      const headers = { Authorization: `Bearer ${token}` };
+
       const [
-        profileResponse,
-        destinationsResponse,
-        availabilityResponse,
+        profileRes,
+        destinationsRes,
+        availabilityRes,
+        vehiclesRes,
       ] = await Promise.all([
-        fetch(`${API_URL}/api/driver/profile`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }),
-
+        fetch(`${API_URL}/api/driver/profile`, { headers }),
         fetch(`${API_URL}/api/destinations`),
-
-        fetch(`${API_URL}/api/driver/availability`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }),
+        fetch(`${API_URL}/api/driver/availability`, { headers }),
+        fetch(`${API_URL}/api/driver/vehicles`, { headers }),
       ]);
 
-      const profileData =
-        await profileResponse.json();
+      // Check content types to prevent HTML parsing crash
+      const parseJsonSafely = async (res: Response, endpointName: string) => {
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (err) {
+          console.error(`HTML/Non-JSON response from ${endpointName}:`, text);
+          throw new Error(`Server returned error page for ${endpointName} (Status: ${res.status})`);
+        }
+      };
 
-      const destinationsData =
-        await destinationsResponse.json();
+      const profileData = await parseJsonSafely(profileRes, '/api/driver/profile');
+      const destinationsData = await parseJsonSafely(destinationsRes, '/api/destinations');
+      const availabilityData = await parseJsonSafely(availabilityRes, '/api/driver/availability');
+      const vehiclesData = await parseJsonSafely(vehiclesRes, '/api/driver/vehicles');
 
-      const availabilityData =
-        await availabilityResponse.json();
+      if (!profileRes.ok) throw new Error(profileData.message || 'Unable to load profile');
+      if (!destinationsRes.ok) throw new Error(destinationsData.message || 'Unable to load destinations');
+      if (!availabilityRes.ok) throw new Error(availabilityData.message || 'Unable to load availability');
+      if (!vehiclesRes.ok) throw new Error(vehiclesData.message || 'Unable to load vehicles');
 
-      if (!profileResponse.ok) {
-        throw new Error(
-          profileData.message ||
-            'Unable to load driver profile'
-        );
-      }
-
-      if (!destinationsResponse.ok) {
-        throw new Error(
-          destinationsData.message ||
-            'Unable to load destinations'
-        );
-      }
-
-      if (!availabilityResponse.ok) {
-        throw new Error(
-          availabilityData.message ||
-            'Unable to load availability'
-        );
-      }
-
-      const destinationList: Destination[] =
-        destinationsData.destinations || [];
+      const destinationList: Destination[] = destinationsData.destinations || [];
+      const vehicleList: Vehicle[] = vehiclesData.vehicles || [];
 
       setDriver(profileData.driver);
-
       setDestinations(destinationList);
+      setVehicles(vehicleList);
 
-      const availability =
-        availabilityData.availability;
-
-      const currentlyAvailable =
-        Boolean(
-          availability?.is_available
-        );
-
-      setIsAvailable(
-        currentlyAvailable
+      // Check if driver is already checked into any vehicle
+      const currentAssignedVehicle = vehicleList.find(
+        (v) => Number(v.current_driver_id) === Number(profileData.driver?.id)
       );
+      setSelectedVehicle(currentAssignedVehicle || null);
 
-      if (availability?.location_id) {
-        const currentDestination =
-          destinationList.find(
-            (destination) =>
-              Number(destination.id) ===
-              Number(
-                availability.location_id
-              )
-          );
+      const availability = availabilityData.availability;
+      setIsAvailable(Boolean(availability?.is_available));
 
-        setSelectedDestination(
-          currentDestination || null
+      if (availability?.destination_id) {
+        const currentDestination = destinationList.find(
+          (d) => Number(d.id) === Number(availability.destination_id)
         );
+        setSelectedDestination(currentDestination || null);
       } else {
         setSelectedDestination(null);
       }
     } catch (error: any) {
-      console.error(
-        'Driver dashboard error:',
-        error
-      );
-
+      console.error('Driver dashboard error:', error);
       Alert.alert(
         'Unable to load dashboard',
-        error.message ||
-          'Something went wrong'
+        error.message || 'Something went wrong'
       );
     } finally {
       setLoading(false);
@@ -186,9 +168,56 @@ export default function DriverDashboard() {
     await loadDriverData();
   };
 
+  const handleSelectVehicle = async (vehicle: Vehicle) => {
+    if (isAvailable) {
+      Alert.alert(
+        'Go unavailable first',
+        'Set yourself as unavailable before changing your vehicle.'
+      );
+      return;
+    }
+
+    try {
+      const token = await getToken();
+      if (!token) {
+        router.replace('/login');
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/driver/select-vehicle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ vehicle_id: vehicle.id }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Could not assign vehicle');
+      }
+
+      setSelectedVehicle(vehicle);
+      Alert.alert('Vehicle Assigned', `You are now checked into ${vehicle.vehicle_number}`);
+      await loadDriverData();
+    } catch (error: any) {
+      Alert.alert('Selection Failed', error.message || 'Could not select vehicle.');
+    }
+  };
+
   const chooseDestination = (
     destination: Destination
   ) => {
+    if (!selectedVehicle) {
+      Alert.alert(
+        'Vehicle Required',
+        'Please select your fleet vehicle (01 - 20) above before choosing a route.'
+      );
+      return;
+    }
+
     if (isAvailable) {
       Alert.alert(
         'Go unavailable first',
@@ -204,6 +233,14 @@ export default function DriverDashboard() {
   };
 
   const handleAvailability = async () => {
+    if (!selectedVehicle) {
+      Alert.alert(
+        'Vehicle Required',
+        'Please select your fleet vehicle before becoming available.'
+      );
+      return;
+    }
+
     if (
       !isAvailable &&
       !selectedDestination
@@ -423,7 +460,6 @@ export default function DriverDashboard() {
           </TouchableOpacity>
         </View>
 
-
         {/* DRIVER SUMMARY */}
         <View
           style={styles.summaryCard}
@@ -512,6 +548,59 @@ export default function DriverDashboard() {
           </View>
         </View>
 
+        {/* VEHICLE SELECTION SECTION (01 - 20) */}
+        <View style={styles.routeSectionHeader}>
+          <View style={styles.routeHeadingRow}>
+            <View style={styles.routeHeadingIcon}>
+              <Ionicons name="car-outline" size={20} color={COLORS.primary} />
+            </View>
+            <View style={styles.routeHeadingText}>
+              <Text style={styles.sectionTitle}>Select Fleet Vehicle</Text>
+              <Text style={styles.sectionSubtitle}>
+                {selectedVehicle ? `Checked into ${selectedVehicle.vehicle_number}` : 'Choose Vehicle 01 to 20'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.destinationScrollContent}
+        >
+          {vehicles.map((vehicle) => {
+            const selected = Number(selectedVehicle?.id) === Number(vehicle.id);
+            return (
+              <TouchableOpacity
+                key={vehicle.id}
+                activeOpacity={0.8}
+                onPress={() => handleSelectVehicle(vehicle)}
+                style={[
+                  styles.destinationCard,
+                  selected && styles.destinationCardSelected,
+                  isAvailable && styles.destinationCardDisabled,
+                ]}
+              >
+                <View style={[styles.destinationIcon, selected && styles.destinationIconSelected]}>
+                  <Ionicons
+                    name={selected ? 'checkmark' : 'car'}
+                    size={22}
+                    color={selected ? COLORS.white : COLORS.primary}
+                  />
+                </View>
+                <Text style={[styles.destinationName, selected && styles.destinationNameSelected]}>
+                  {vehicle.vehicle_number}
+                </Text>
+                <View style={styles.destinationBottom}>
+                  <Text style={[styles.destinationFareAmount, selected && styles.destinationFareSelected]}>
+                    Capacity: 10
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
         {/* STATUS */}
         <View
           style={
@@ -578,7 +667,7 @@ export default function DriverDashboard() {
               >
                 {isAvailable
                   ? ` `
-                  : 'Select your route below, then become available when you are ready.'}
+                  : 'Select your vehicle and route below, then become available.'}
               </Text>
             </View>
           </View>
@@ -682,7 +771,7 @@ export default function DriverDashboard() {
               >
                 {isAvailable
                   ? 'Set yourself as unavailable to change your route.'
-                  : 'Swipe left or right and tap a destination.'}
+                  : 'Tap a destination.'}
               </Text>
             </View>
           </View>
@@ -910,7 +999,6 @@ export default function DriverDashboard() {
         </ScrollView>
 
         {/* DRIVER TOOLS */}
-        
         <TouchableOpacity
           style={
             styles.driverToolsButton

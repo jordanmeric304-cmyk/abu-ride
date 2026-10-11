@@ -990,14 +990,14 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
 });
 
 // ============================================================
-// GET ACTIVE VEHICLES FOR PASSENGERS (Shows Driver Username & Vehicle)
+// GET ACTIVE VEHICLES FOR PASSENGERS (Extracts exact driver username/identity)
 // ============================================================
 
 router.get('/active-vehicles', authMiddleware, async (req, res) => {
   try {
     const { destination_id } = req.query;
 
-    // 1. Fetch all active vehicles checked in with a driver
+    // 1. Fetch active vehicles checked in with a driver
     const { data: vehicles, error: vehicleError } = await supabase
       .from('vehicles')
       .select('*')
@@ -1016,7 +1016,7 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
     // 2. Extract driver user IDs
     const driverIds = vehicles.map(v => v.current_driver_id).filter(Boolean);
 
-    // 3. Fetch driver profiles and user credentials (username + full_name)
+    // 3. Fetch driver profiles and user table fields
     const { data: driverProfiles } = await supabase
       .from('driver_profiles')
       .select('user_id, destination_id, driver_license_number')
@@ -1024,28 +1024,31 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
 
     const { data: users } = await supabase
       .from('users')
-      .select('id, username, full_name, email, phone')
+      .select('id, full_name, email, phone')
       .in('id', driverIds);
 
-    // 4. Combine data cleanly using actual username
+    // 4. Combine data and determine exact driver username/handle
     const formattedVehicles = vehicles.map(vehicle => {
       const profile = (driverProfiles || []).find(p => p.user_id === vehicle.current_driver_id);
       const user = (users || []).find(u => u.id === vehicle.current_driver_id);
 
-      // Filter by requested destination if supplied
+      // Filter by destination if requested
       if (destination_id && Number(profile?.destination_id) !== Number(destination_id)) {
         return null;
       }
 
-      // Prioritize username over full_name
-      const driverUsername = user?.username || user?.full_name || 'Driver';
+      // Determine best username display:
+      // 1. user.username (if present on table)
+      // 2. user.full_name
+      // 3. email prefix (e.g. "john" from "john@gmail.com")
+      const emailPrefix = user?.email ? user.email.split('@')[0] : null;
+      const exactDriverName = user?.username || user?.full_name || emailPrefix || `Driver_${vehicle.current_driver_id}`;
 
       return {
         vehicle_id: vehicle.id,
         vehicle_number: vehicle.vehicle_number || `Vehicle ${vehicle.id}`,
         driver_id: vehicle.current_driver_id,
-        driver_name: driverUsername,
-        driver_custom_id: `DRV-${user?.id || vehicle.current_driver_id}`,
+        driver_name: exactDriverName,
         destination_id: profile?.destination_id || null,
         available_seats: 10,
       };

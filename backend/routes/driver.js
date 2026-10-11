@@ -989,9 +989,8 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
   }
 });
 
-
 // ============================================================
-// GET ACTIVE VEHICLES FOR PASSENGERS
+// GET ACTIVE VEHICLES FOR PASSENGERS (Shows Driver Username & Vehicle)
 // ============================================================
 
 router.get('/active-vehicles', authMiddleware, async (req, res) => {
@@ -1017,7 +1016,7 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
     // 2. Extract driver user IDs
     const driverIds = vehicles.map(v => v.current_driver_id).filter(Boolean);
 
-    // 3. Fetch driver profiles and user names directly
+    // 3. Fetch driver profiles and user credentials (username + full_name)
     const { data: driverProfiles } = await supabase
       .from('driver_profiles')
       .select('user_id, destination_id, driver_license_number')
@@ -1025,10 +1024,10 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
 
     const { data: users } = await supabase
       .from('users')
-      .select('id, full_name, email, phone')
+      .select('id, username, full_name, email, phone')
       .in('id', driverIds);
 
-    // 4. Combine data cleanly
+    // 4. Combine data cleanly using actual username
     const formattedVehicles = vehicles.map(vehicle => {
       const profile = (driverProfiles || []).find(p => p.user_id === vehicle.current_driver_id);
       const user = (users || []).find(u => u.id === vehicle.current_driver_id);
@@ -1038,14 +1037,17 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
         return null;
       }
 
+      // Prioritize username over full_name
+      const driverUsername = user?.username || user?.full_name || 'Driver';
+
       return {
         vehicle_id: vehicle.id,
         vehicle_number: vehicle.vehicle_number || `Vehicle ${vehicle.id}`,
         driver_id: vehicle.current_driver_id,
-        driver_name: user?.full_name || 'Assigned Driver',
+        driver_name: driverUsername,
         driver_custom_id: `DRV-${user?.id || vehicle.current_driver_id}`,
         destination_id: profile?.destination_id || null,
-        available_seats: 10, // Default seat availability
+        available_seats: 10,
       };
     }).filter(Boolean);
 
@@ -1055,8 +1057,6 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
     return res.status(500).json({ success: false, message: 'Server error while fetching active vehicles' });
   }
 });
-
-
 
 // ============================================================
 // ISSUE REPORTING (Passengers & Drivers)

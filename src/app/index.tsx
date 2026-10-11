@@ -175,53 +175,74 @@ export default function HomeScreen() {
       );
     }
   };
+// ============================================================
+// GET ACTIVE VEHICLES FOR PASSENGERS (Shows Driver Username & Vehicle)
+// ============================================================
 
-  const loadDrivers = async (destinationId: number) => {
-    setLoadingDrivers(true);
-    setSelectedDriver(null);
-    setDrivers([]);
+router.get('/active-vehicles', authMiddleware, async (req, res) => {
+  try {
+    const { destination_id } = req.query;
 
-    try {
-      const token = await SecureStore.getItemAsync('auth_token');
+    // 1. Fetch all active vehicles checked in with a driver
+    const { data: vehicles, error: vehicleError } = await supabase
+      .from('vehicles')
+      .select('*')
+      .eq('is_active', true)
+      .not('current_driver_id', 'is', null);
 
-      const response = await fetch(
-        `${API_URL}/api/driver/active-vehicles?destination_id=${destinationId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (data.success && data.vehicles) {
-        const mapped = data.vehicles.map((v: any) => ({
-          id: v.driver_id || v.vehicle_id,
-          driver_id: v.driver_id,
-          vehicle_id: v.vehicle_id,
-          full_name: `${v.vehicle_number} - ${v.driver_name}`,
-          phone: null,
-          vehicle_number: v.vehicle_number,
-          vehicle_type: `Driver: ${v.driver_name}`,
-          is_available: true,
-          destination_id: destinationId,
-          destination_name: selectedDestination?.name || '',
-          fare: selectedDestination?.fare || 0,
-          available_seats: v.available_seats || 10,
-        }));
-
-        setDrivers(mapped);
-      } else {
-        setDrivers([]);
-      }
-    } catch (error) {
-      console.log('Available drivers error:', error);
-      setDrivers([]);
-    } finally {
-      setLoadingDrivers(false);
+    if (vehicleError) {
+      console.error('Fetch active vehicles error:', vehicleError);
+      return res.status(400).json({ success: false, message: 'Could not fetch active vehicles' });
     }
-  };
+
+    if (!vehicles || vehicles.length === 0) {
+      return res.json({ success: true, vehicles: [] });
+    }
+
+    // 2. Extract driver user IDs
+    const driverIds = vehicles.map(v => v.current_driver_id).filter(Boolean);
+
+    // 3. Fetch driver profiles and user credentials (username + full_name)
+    const { data: driverProfiles } = await supabase
+      .from('driver_profiles')
+      .select('user_id, destination_id, driver_license_number')
+      .in('user_id', driverIds);
+
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, username, full_name, email, phone')
+      .in('id', driverIds);
+
+    // 4. Combine data cleanly using actual username
+    const formattedVehicles = vehicles.map(vehicle => {
+      const profile = (driverProfiles || []).find(p => p.user_id === vehicle.current_driver_id);
+      const user = (users || []).find(u => u.id === vehicle.current_driver_id);
+
+      // Filter by requested destination if supplied
+      if (destination_id && Number(profile?.destination_id) !== Number(destination_id)) {
+        return null;
+      }
+
+      // Prioritize username over full_name
+      const driverUsername = user?.username || user?.full_name || 'Driver';
+
+      return {
+        vehicle_id: vehicle.id,
+        vehicle_number: vehicle.vehicle_number || `Vehicle ${vehicle.id}`,
+        driver_id: vehicle.current_driver_id,
+        driver_name: driverUsername,
+        driver_custom_id: `DRV-${user?.id || vehicle.current_driver_id}`,
+        destination_id: profile?.destination_id || null,
+        available_seats: 10,
+      };
+    }).filter(Boolean);
+
+    return res.json({ success: true, vehicles: formattedVehicles });
+  } catch (error) {
+    console.error('Active vehicles endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while fetching active vehicles' });
+  }
+});
   
   const selectDestination = (
     destination: Destination

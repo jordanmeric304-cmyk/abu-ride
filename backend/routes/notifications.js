@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../db'); 
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = 'abu_ride_secret_key_change_later';
+const JWT_SECRET = process.env.JWT_SECRET || 'abu_ride_secret_key_change_later';
 
 // Helper middleware: Verify JWT token
 const verifyToken = async (req, res, next) => {
@@ -24,19 +24,30 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-// 1. POST: Submit an issue report to admin (Saved to DB regardless of admin online/offline status)
-router.post('/reports', verifyToken, async (req, res) => {
+const handleReportSubmission = async (req, res) => {
   try {
-    const { role, issue_type, description } = req.body;
+    const { role, issue_type, description, message, title, subject } = req.body;
     const reporter_id = req.user.id || req.user.userId;
 
     if (!reporter_id) {
       return res.status(400).json({ success: false, message: 'User ID missing from token payload' });
     }
 
+    const reportMessage = description || message || req.body.details || 'No description provided';
+    const reportType = issue_type || title || subject || 'General Issue';
+
     const { error } = await db.supabase
       .from('reports')
-      .insert([{ reporter_id, role, issue_type, description }]);
+      .insert([{ 
+        reporter_id, 
+        user_id: reporter_id,
+        role: role || req.user.role || 'user', 
+        issue_type: reportType, 
+        description: reportMessage,
+        message: reportMessage,
+        title: reportType,
+        status: 'pending'
+      }]);
 
     if (error) {
       console.error('Supabase report insert error:', error);
@@ -48,7 +59,11 @@ router.post('/reports', verifyToken, async (req, res) => {
     console.error('Report submission error:', err);
     return res.status(500).json({ success: false, message: 'Failed to submit report: ' + (err.message || 'Database error') });
   }
-});
+};
+
+// 1. POST: Submit an issue report (supports both /reports and root)
+router.post('/reports', verifyToken, handleReportSubmission);
+router.post('/', verifyToken, handleReportSubmission);
 
 // 2. GET: Fetch unread notifications for a user
 router.get('/unread', verifyToken, async (req, res) => {
@@ -74,7 +89,6 @@ router.get('/unread', verifyToken, async (req, res) => {
 // 3. POST: Driver triggers "Be at boarding point in 10 mins" alert
 router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
   try {
-    // Query ALL tickets in the table to find any active/paid booking
     const { data: allTickets, error: ticketErr } = await db.supabase
       .from('tickets')
       .select('*');
@@ -88,7 +102,6 @@ router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
       return res.json({ success: false, message: 'No tickets found in the database.' });
     }
 
-    // Filter active tickets using common status values (valid, active, purchased, paid, unused, or null)
     const validStatuses = ['valid', 'active', 'purchased', 'paid', 'unused'];
     const activeTickets = allTickets.filter(t => 
       !t.status || validStatuses.includes(String(t.status).toLowerCase())
@@ -98,7 +111,6 @@ router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
       return res.json({ success: false, message: 'No active tickets found in system right now.' });
     }
 
-    // Extract passenger user IDs across all possible column names
     const passengerIds = activeTickets.map(t => 
       t.passenger_id || t.user_id || t.passenger_user_id || t.user
     ).filter(Boolean);
@@ -109,7 +121,6 @@ router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
       return res.json({ success: false, message: 'No valid passenger accounts attached to current tickets.' });
     }
 
-    // Create notification records for each passenger
     const notifications = uniquePassengerIds.map(pId => ({
       user_id: pId,
       title: 'Ride Update 🚗',

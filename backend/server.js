@@ -9,7 +9,7 @@ const walletRoutes = require('./routes/wallet');
 const ticketRoutes = require('./routes/tickets');
 const adminRoutes = require('./routes/admin');
 const driverRoutes = require('./routes/driver');
-const notificationRoutes = require('./routes/notifications'); // <-- Added notifications require
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 
@@ -67,6 +67,7 @@ app.get('/api/destinations', async (req, res) => {
     });
   }
 });
+
 /*
   Authentication routes
 */
@@ -93,14 +94,13 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/driver', driverRoutes);
 
 /*
-  Notification & Report routes
+  Notification & Report routes (Mounted on both /api/notifications and /api/reports for complete compatibility)
 */
-app.use('/api/notifications', notificationRoutes); // <-- Added notification route mount
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/reports', notificationRoutes);
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(
-    `Server running on port ${PORT}`
-  );
+  console.log(`Server running on port ${PORT}`);
 });

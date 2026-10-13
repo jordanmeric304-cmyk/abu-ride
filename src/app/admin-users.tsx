@@ -2,14 +2,14 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const API_URL = 'https://abu-ride.onrender.com';
@@ -44,6 +44,35 @@ export default function AdminUsersScreen() {
     }
   };
 
+  const handleApproveDriver = async (driverId: number | string, driverName: string) => {
+    try {
+      const token = await SecureStore.getItemAsync('auth_token');
+      if (!token) return;
+
+      const response = await fetch(`${API_URL}/api/admin/approve-driver`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ driver_id: driverId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        Alert.alert('Error', data.message || 'Could not approve driver.');
+        return;
+      }
+
+      Alert.alert('Success', data.message || `Driver ${driverName} approved successfully!`);
+      fetchUsers();
+    } catch (error) {
+      console.log('Approve driver error:', error);
+      Alert.alert('Connection Error', 'Unable to connect to the ABU Ride server.');
+    }
+  };
+
   const inspectUser = async (user: any) => {
     setSelectedUser(user);
     setLoadingTx(true);
@@ -72,7 +101,7 @@ export default function AdminUsersScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
+          press: async () => {
             try {
               const token = await SecureStore.getItemAsync('auth_token');
               const res = await fetch(`${API_URL}/api/admin/users/${userId}`, {
@@ -115,12 +144,34 @@ export default function AdminUsersScreen() {
           renderItem={({ item }) => (
             <View style={styles.userCard}>
               <View style={styles.userInfo}>
-                <Text style={styles.userName}>{item.full_name || item.email}</Text>
-                <Text style={styles.userSub}>{item.email} • Role: {item.role}</Text>
+                <View style={styles.userHeaderRow}>
+                  <Text style={styles.userName}>{item.full_name || item.email}</Text>
+                  <View style={[styles.roleBadge, item.role === 'driver' ? styles.driverBadge : styles.passengerBadge]}>
+                    <Text style={[styles.roleText, item.role === 'driver' ? styles.driverRoleText : styles.passengerRoleText]}>
+                      {item.role.toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.userSub}>{item.email}</Text>
                 <Text style={styles.userSub}>Phone: {item.phone || 'N/A'}</Text>
+                
+                {item.role === 'driver' && (
+                  <Text style={styles.approvalStatus}>
+                    Status: {item.is_approved ? `Approved (${item.driver_custom_id || 'ID Assigned'})` : '⏳ Pending Approval'}
+                  </Text>
+                )}
               </View>
 
               <View style={styles.userActions}>
+                {item.role === 'driver' && !item.is_approved && (
+                  <TouchableOpacity
+                    style={styles.approveBtn}
+                    onPress={() => handleApproveDriver(item.id, item.full_name || 'Driver')}
+                  >
+                    <Text style={styles.approveBtnText}>Approve</Text>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
                   style={styles.viewBtn}
                   onPress={() => inspectUser(item)}
@@ -194,14 +245,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DCE8DF',
   },
-  userInfo: { marginBottom: 10 },
-  userName: { fontSize: 16, fontWeight: '800', color: '#17201B' },
+  userInfo: { marginBottom: 12 },
+  userHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  userName: { fontSize: 16, fontWeight: '800', color: '#17201B', flex: 1 },
   userSub: { fontSize: 13, color: '#758078', marginTop: 2 },
-  userActions: { flexDirection: 'row', gap: 10 },
+  approvalStatus: { fontSize: 12, fontWeight: '700', color: '#B8860B', marginTop: 6 },
+  roleBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  driverBadge: { backgroundColor: '#E8F5EE' },
+  passengerBadge: { backgroundColor: '#EDF2EF' },
+  roleText: { fontSize: 10, fontWeight: '800' },
+  driverRoleText: { color: '#168447' },
+  passengerRoleText: { color: '#555' },
+  userActions: { flexDirection: 'row', gap: 8 },
+  approveBtn: { backgroundColor: '#168447', padding: 10, borderRadius: 10, alignItems: 'center', paddingHorizontal: 12 },
+  approveBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
   viewBtn: { flex: 1, backgroundColor: '#E5F4EA', padding: 10, borderRadius: 10, alignItems: 'center' },
-  viewBtnText: { color: '#168447', fontWeight: '700' },
-  deleteBtn: { backgroundColor: '#FFEBEB', padding: 10, borderRadius: 10, alignItems: 'center', paddingHorizontal: 15 },
-  deleteBtnText: { color: '#D9534F', fontWeight: '700' },
+  viewBtnText: { color: '#168447', fontWeight: '700', fontSize: 12 },
+  deleteBtn: { backgroundColor: '#FFEBEB', padding: 10, borderRadius: 10, alignItems: 'center', paddingHorizontal: 12 },
+  deleteBtnText: { color: '#D9534F', fontWeight: '700', fontSize: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modal: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 35 },
   modalTitle: { fontSize: 18, fontWeight: '800', color: '#17201B' },

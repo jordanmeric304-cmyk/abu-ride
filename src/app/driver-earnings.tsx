@@ -77,7 +77,6 @@ export default function DriverEarningsScreen() {
 
       setEarnings(list);
 
-      // Client-side fallback calculation if backend summary is absent
       const calculatedTotal = list.reduce(
         (sum, item) => (item.status !== 'cancelled' ? sum + item.amount : sum),
         0
@@ -373,7 +372,7 @@ const styles = StyleSheet.create({
   },
   center: {
     flex: 1,
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'center',
   },
   loadingText: {

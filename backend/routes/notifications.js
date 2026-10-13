@@ -74,60 +74,42 @@ router.get('/unread', verifyToken, async (req, res) => {
 // 3. POST: Driver triggers "Be at boarding point in 10 mins" alert
 router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
   try {
-    const driver_user_id = req.user.id || req.user.userId;
-
-    // A. Check for destination from active driver availability
-    const { data: availability } = await db.supabase
-      .from('driver_availability')
-      .select('destination_id')
-      .eq('driver_id', driver_user_id)
-      .maybeSingle();
-
-    const driverDestinationId = availability?.destination_id;
-
-    // B. Query valid tickets matching the destination if available
-    let ticketQuery = db.supabase
+    // Query ALL tickets in the table to find any active/paid booking
+    const { data: allTickets, error: ticketErr } = await db.supabase
       .from('tickets')
-      .select('*')
-      .eq('status', 'valid');
+      .select('*');
 
-    if (driverDestinationId) {
-      ticketQuery = ticketQuery.eq('destination_id', driverDestinationId);
+    if (ticketErr) {
+      console.error('Error fetching tickets:', ticketErr);
+      return res.status(500).json({ success: false, message: 'Tickets query error: ' + ticketErr.message });
     }
 
-    const { data: bookings, error: bookingErr } = await ticketQuery;
-
-    if (bookingErr) {
-      console.error('Error fetching tickets:', bookingErr);
-      return res.status(500).json({ success: false, message: 'Tickets query error: ' + bookingErr.message });
+    if (!allTickets || allTickets.length === 0) {
+      return res.json({ success: false, message: 'No tickets found in the database.' });
     }
 
-    // Fallback to all valid active tickets across all routes if no match on specific destination
-    let activeTickets = bookings;
-    if (!activeTickets || activeTickets.length === 0) {
-      const { data: allValidTickets } = await db.supabase
-        .from('tickets')
-        .select('*')
-        .eq('status', 'valid');
-      activeTickets = allValidTickets || [];
-    }
+    // Filter active tickets using common status values (valid, active, purchased, paid, unused, or null)
+    const validStatuses = ['valid', 'active', 'purchased', 'paid', 'unused'];
+    const activeTickets = allTickets.filter(t => 
+      !t.status || validStatuses.includes(String(t.status).toLowerCase())
+    );
 
     if (activeTickets.length === 0) {
-      return res.json({ success: false, message: 'No paid passengers with active tickets found right now.' });
+      return res.json({ success: false, message: 'No active tickets found in system right now.' });
     }
 
-    // C. Extract unique passenger IDs (handling column name variations)
+    // Extract passenger user IDs across all possible column names
     const passengerIds = activeTickets.map(t => 
-      t.passenger_id || t.user_id || t.passenger_user_id
+      t.passenger_id || t.user_id || t.passenger_user_id || t.user
     ).filter(Boolean);
 
     const uniquePassengerIds = [...new Set(passengerIds)];
 
     if (uniquePassengerIds.length === 0) {
-      return res.json({ success: false, message: 'No valid passenger accounts attached to active tickets.' });
+      return res.json({ success: false, message: 'No valid passenger accounts attached to current tickets.' });
     }
 
-    // D. Store notifications in DB for all passengers (works whether logged in or out)
+    // Create notification records for each passenger
     const notifications = uniquePassengerIds.map(pId => ({
       user_id: pId,
       title: 'Ride Update 🚗',
@@ -147,7 +129,7 @@ router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
 
     return res.json({ 
       success: true, 
-      message: `Notification broadcasted to ${uniquePassengerIds.length} passenger(s) who bought tickets!` 
+      message: `Notification broadcasted to ${uniquePassengerIds.length} passenger(s)!` 
     });
   } catch (err) {
     console.error('Driver notification error:', err);

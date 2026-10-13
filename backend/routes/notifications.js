@@ -24,7 +24,7 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-// 1. POST: Submit an issue report to admin
+// 1. POST: Submit an issue report to admin (Saved to DB regardless of admin online/offline status)
 router.post('/reports', verifyToken, async (req, res) => {
   try {
     const { role, issue_type, description } = req.body;
@@ -74,43 +74,61 @@ router.get('/unread', verifyToken, async (req, res) => {
 // 3. POST: Driver triggers "Be at boarding point in 10 mins" alert
 router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
   try {
-    const user_id = req.user.id || req.user.userId;
+    const driver_user_id = req.user.id || req.user.userId;
 
-    // Fetch active tickets without specifying column names in the select clause
-    const { data: bookings, error: bookingErr } = await db.supabase
+    // A. Check for destination from active driver availability
+    const { data: availability } = await db.supabase
+      .from('driver_availability')
+      .select('destination_id')
+      .eq('driver_id', driver_user_id)
+      .maybeSingle();
+
+    const driverDestinationId = availability?.destination_id;
+
+    // B. Query valid tickets matching the destination if available
+    let ticketQuery = db.supabase
       .from('tickets')
       .select('*')
       .eq('status', 'valid');
+
+    if (driverDestinationId) {
+      ticketQuery = ticketQuery.eq('destination_id', driverDestinationId);
+    }
+
+    const { data: bookings, error: bookingErr } = await ticketQuery;
 
     if (bookingErr) {
       console.error('Error fetching tickets:', bookingErr);
       return res.status(500).json({ success: false, message: 'Tickets query error: ' + bookingErr.message });
     }
 
-    if (!bookings || bookings.length === 0) {
-      return res.json({ success: false, message: 'No active tickets found in the system right now.' });
+    // Fallback to all valid active tickets across all routes if no match on specific destination
+    let activeTickets = bookings;
+    if (!activeTickets || activeTickets.length === 0) {
+      const { data: allValidTickets } = await db.supabase
+        .from('tickets')
+        .select('*')
+        .eq('status', 'valid');
+      activeTickets = allValidTickets || [];
     }
 
-    // Filter tickets for this driver dynamically
-    const driverBookings = bookings.filter(b => 
-      Number(b.driver_id) === Number(user_id) || 
-      Number(b.driver_user_id) === Number(user_id)
-    );
+    if (activeTickets.length === 0) {
+      return res.json({ success: false, message: 'No paid passengers with active tickets found right now.' });
+    }
 
-    const targetList = driverBookings.length > 0 ? driverBookings : bookings;
-
-    // Extract passenger ID from any field present on the ticket row
-    const passengerIds = targetList.map(b => 
-      b.passenger_id || b.user_id || b.passenger_user_id || b.user
+    // C. Extract unique passenger IDs (handling column name variations)
+    const passengerIds = activeTickets.map(t => 
+      t.passenger_id || t.user_id || t.passenger_user_id
     ).filter(Boolean);
 
-    const uniquePassengers = [...new Set(passengerIds)];
+    const uniquePassengerIds = [...new Set(passengerIds)];
 
-    if (uniquePassengers.length === 0) {
-      return res.json({ success: false, message: 'No active passengers attached to current bookings.' });
+    if (uniquePassengerIds.length === 0) {
+      return res.json({ success: false, message: 'No valid passenger accounts attached to active tickets.' });
     }
 
-    const notifications = uniquePassengers.map(pId => ({
+    // D. Store notifications in DB for all passengers (works whether logged in or out)
+    const notifications = uniquePassengerIds.map(pId => ({
       user_id: pId,
       title: 'Ride Update 🚗',
       message: 'Your driver requests you to be at the boarding point in 10 minutes!',
@@ -127,7 +145,10 @@ router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
       return res.status(500).json({ success: false, message: 'Notification table error: ' + notifErr.message });
     }
 
-    return res.json({ success: true, message: `Notification sent to ${uniquePassengers.length} active passenger(s)!` });
+    return res.json({ 
+      success: true, 
+      message: `Notification broadcasted to ${uniquePassengerIds.length} passenger(s) who bought tickets!` 
+    });
   } catch (err) {
     console.error('Driver notification error:', err);
     return res.status(500).json({ success: false, message: 'Failed to notify passengers: ' + err.message });

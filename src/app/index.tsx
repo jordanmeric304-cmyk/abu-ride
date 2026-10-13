@@ -181,15 +181,6 @@ export default function HomeScreen() {
           const cleanUsername = rawName.startsWith('@') ? rawName.slice(1) : rawName;
           const vehNo = v.vehicle_number || (v.vehicle_id ? `Vehicle ${v.vehicle_id}` : 'Unassigned');
           const availSeats = v.available_seats ?? 10;
-          const bookedSeats = 10 - availSeats;
-
-          // Check for 8-Seat Threshold alert
-          if (bookedSeats >= 8) {
-            Alert.alert(
-              'Boarding Urgent! 🏃‍♂️',
-              `Vehicle ${vehNo} serving ${selectedDestination?.name || 'your destination'} now has ${bookedSeats} seats booked! Please make your way to the boarding point immediately.`
-            );
-          }
 
           return {
             id: v.driver_id || v.vehicle_id,
@@ -727,6 +718,14 @@ export default function HomeScreen() {
               Log complaints to admin
             </Text>
           </Pressable>
+
+          <Pressable
+            style={styles.quickCard}
+            onPress={() => router.push('/notifications')}
+          >
+            <Text style={styles.quickTitle}>Notifications 🔔</Text>
+            <Text style={styles.quickText}>View ride alerts</Text>
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -1231,10 +1230,11 @@ const styles = StyleSheet.create({
   },
   quickAccess: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   quickCard: {
-    flex: 1,
+    width: '48%',
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 14,
@@ -1257,7 +1257,7 @@ const styles = StyleSheet.create({
   },
   quickText: {
     fontSize: 11,
-    color: '#6B756F',
+    color: '#66756F',
     marginTop: 5,
     lineHeight: 16,
   },

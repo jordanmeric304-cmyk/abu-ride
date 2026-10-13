@@ -267,17 +267,18 @@ export default function DriverDashboard() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Failed to notify passengers.');
+        Alert.alert('Notice', data.message || 'Could not send broadcast.');
+        return;
       }
 
-      Alert.alert('Success', data.message || 'Notification broadcasted to all passengers!');
+      Alert.alert('Broadcast Sent 📢', data.message);
     } catch (error: any) {
       console.error('Notify passengers error:', error);
-      Alert.alert('Broadcast Error', error.message || 'Could not notify passengers.');
+      Alert.alert('Connection Error', error.message || 'Unable to connect to server.');
     } finally {
       setNotifyingPassengers(false);
     }
-  };
+  };  
 
   if (loading) {
     return (

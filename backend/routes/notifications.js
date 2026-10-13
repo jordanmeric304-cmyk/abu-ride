@@ -2,24 +2,28 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Matches your existing backend db configuration
 
-// Helper middleware: Ensure user is authenticated
+// Helper middleware: Ensure user is authenticated safely
 const verifyToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'No authorization token provided' });
     }
 
     const token = authHeader.split(' ')[1];
+
+    // Verify token using Supabase Auth
     const { data: { user }, error } = await db.supabase.auth.getUser(token);
 
     if (error || !user) {
+      console.error('Token verification error:', error?.message);
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
 
     req.user = user;
     next();
   } catch (err) {
+    console.error('Auth middleware crash:', err);
     return res.status(500).json({ success: false, message: 'Auth verification failed' });
   }
 };

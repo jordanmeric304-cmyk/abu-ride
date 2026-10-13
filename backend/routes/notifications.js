@@ -85,12 +85,31 @@ router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
 
     const driver_id_query = driverProf?.id || user_id;
 
-    // Fetch valid tickets for this driver
-    const { data: bookings, error: bookingErr } = await db.supabase
+    // Query tickets using both passenger_id and user_id fallback
+    let bookings = null;
+    let bookingErr = null;
+
+    // First try passenger_id (most standard for tickets table)
+    const res1 = await db.supabase
       .from('tickets')
-      .select('user_id')
+      .select('passenger_id')
       .or(`driver_id.eq.${driver_id_query},driver_id.eq.${user_id}`)
       .eq('status', 'valid');
+
+    if (res1.error && res1.error.message.includes('passenger_id')) {
+      // Fallback if passenger_id isn't present
+      const res2 = await db.supabase
+        .from('tickets')
+        .select('*')
+        .or(`driver_id.eq.${driver_id_query},driver_id.eq.${user_id}`)
+        .eq('status', 'valid');
+        
+      bookings = res2.data;
+      bookingErr = res2.error;
+    } else {
+      bookings = res1.data;
+      bookingErr = res1.error;
+    }
 
     if (bookingErr) {
       console.error('Error fetching booked tickets:', bookingErr);
@@ -101,8 +120,8 @@ router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
       return res.json({ success: false, message: 'No active passengers found booked for your ride right now.' });
     }
 
-    // Extract unique passenger IDs
-    const uniquePassengers = [...new Set(bookings.map(b => b.user_id))].filter(Boolean);
+    // Extract unique passenger IDs from passenger_id or user_id fields
+    const uniquePassengers = [...new Set(bookings.map(b => b.passenger_id || b.user_id))].filter(Boolean);
 
     if (uniquePassengers.length === 0) {
       return res.json({ success: false, message: 'No valid passenger accounts attached to current bookings.' });

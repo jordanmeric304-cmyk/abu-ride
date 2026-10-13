@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = 'abu_ride_secret_key_change_later';
 
-// Helper middleware: Verify custom app JWT token using the correct project secret
+// Helper middleware: Verify JWT token
 const verifyToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -16,7 +16,7 @@ const verifyToken = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, JWT_SECRET);
 
-    req.user = decoded; // Contains id, role, is_approved
+    req.user = decoded;
     next();
   } catch (err) {
     console.error('Token verification error:', err.message);
@@ -38,12 +38,15 @@ router.post('/reports', verifyToken, async (req, res) => {
       .from('reports')
       .insert([{ reporter_id, role, issue_type, description }]);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase report insert error:', error);
+      throw error;
+    }
 
     return res.json({ success: true, message: 'Report submitted successfully to admin.' });
   } catch (err) {
     console.error('Report submission error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to submit report: ' + err.message });
+    return res.status(500).json({ success: false, message: 'Failed to submit report: ' + (err.message || 'Database error') });
   }
 });
 
@@ -71,37 +74,61 @@ router.get('/unread', verifyToken, async (req, res) => {
 // 3. POST: Driver triggers "Be at boarding point in 10 mins" alert
 router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
   try {
-    const driver_id = req.user.id || req.user.userId;
-    
+    const user_id = req.user.id || req.user.userId;
+
+    // Find driver_profile ID or active vehicle for this driver user
+    const { data: driverProf } = await db.supabase
+      .from('driver_profiles')
+      .select('id')
+      .eq('user_id', user_id)
+      .maybeSingle();
+
+    const driver_id_query = driverProf?.id || user_id;
+
+    // Fetch valid tickets for this driver
     const { data: bookings, error: bookingErr } = await db.supabase
       .from('tickets')
       .select('user_id')
-      .eq('driver_id', driver_id)
+      .or(`driver_id.eq.${driver_id_query},driver_id.eq.${user_id}`)
       .eq('status', 'valid');
 
-    if (bookingErr) throw bookingErr;
-
-    if (!bookings || bookings.length === 0) {
-      return res.json({ success: false, message: 'No active passengers found for your ride.' });
+    if (bookingErr) {
+      console.error('Error fetching booked tickets:', bookingErr);
+      return res.status(500).json({ success: false, message: 'Error checking active passengers: ' + bookingErr.message });
     }
 
-    const notifications = bookings.map(b => ({
-      user_id: b.user_id,
+    if (!bookings || bookings.length === 0) {
+      return res.json({ success: false, message: 'No active passengers found booked for your ride right now.' });
+    }
+
+    // Extract unique passenger IDs
+    const uniquePassengers = [...new Set(bookings.map(b => b.user_id))].filter(Boolean);
+
+    if (uniquePassengers.length === 0) {
+      return res.json({ success: false, message: 'No valid passenger accounts attached to current bookings.' });
+    }
+
+    const notifications = uniquePassengers.map(pId => ({
+      user_id: pId,
       title: 'Ride Update 🚗',
       message: 'Your driver requests you to be at the boarding point in 10 minutes!',
-      type: 'driver_alert'
+      type: 'driver_alert',
+      is_read: false
     }));
 
     const { error: notifErr } = await db.supabase
       .from('notifications')
       .insert(notifications);
 
-    if (notifErr) throw notifErr;
+    if (notifErr) {
+      console.error('Error inserting notifications:', notifErr);
+      return res.status(500).json({ success: false, message: 'Notification table error: ' + notifErr.message });
+    }
 
-    return res.json({ success: true, message: 'Notification sent to all passengers!' });
+    return res.json({ success: true, message: `Notification sent to ${uniquePassengers.length} active passenger(s)!` });
   } catch (err) {
     console.error('Driver notification error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to notify passengers' });
+    return res.status(500).json({ success: false, message: 'Failed to notify passengers: ' + err.message });
   }
 });
 

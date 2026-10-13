@@ -314,29 +314,16 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
 });
 
 // ============================================================
-// GET DRIVER TRIP HISTORY WITH JOINED DESTINATIONS
+// GET DRIVER TRIP HISTORY
 // ============================================================
 
 router.get('/trips', authMiddleware, driverOnly, async (req, res) => {
   try {
     const driverId = req.user.id;
 
-    const { data: rawTrips, error } = await supabase
+    const { data: trips, error } = await supabase
       .from('trips')
-      .select(`
-        id,
-        status,
-        started_at,
-        completed_at,
-        created_at,
-        fare,
-        amount,
-        destination_id,
-        destinations:destination_id (
-          name,
-          fare
-        )
-      `)
+      .select('*')
       .eq('driver_id', driverId)
       .order('created_at', { ascending: false });
 
@@ -345,22 +332,31 @@ router.get('/trips', authMiddleware, driverOnly, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Could not fetch trip history' });
     }
 
-    const trips = (rawTrips || []).map(trip => {
-      const destName = trip.destinations?.name || trip.destination_name || 'Campus Ride';
-      const tripFare = Number(trip.fare) || Number(trip.amount) || Number(trip.destinations?.fare) || 0;
+    const tripsList = trips || [];
+
+    // Fetch destinations so we can resolve names and fares cleanly
+    const { data: destinations } = await supabase
+      .from('destinations')
+      .select('id, name, fare');
+
+    const destMap = {};
+    (destinations || []).forEach(d => {
+      destMap[d.id] = d;
+    });
+
+    const formattedTrips = tripsList.map(trip => {
+      const dest = destMap[trip.destination_id] || {};
+      const destName = trip.destination_name || dest.name || 'Campus Ride';
+      const tripFare = Number(trip.fare) || Number(trip.amount) || Number(dest.fare) || 0;
 
       return {
-        id: trip.id,
-        status: trip.status || 'active',
-        started_at: trip.started_at,
-        completed_at: trip.completed_at,
-        created_at: trip.created_at,
+        ...trip,
         destination_name: destName,
         fare: tripFare
       };
     });
 
-    return res.json({ success: true, trips });
+    return res.json({ success: true, trips: formattedTrips });
   } catch (error) {
     console.error('Driver trips endpoint error:', error);
     return res.status(500).json({ success: false, message: 'Server error loading trips' });

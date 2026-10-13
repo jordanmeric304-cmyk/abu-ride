@@ -76,55 +76,38 @@ router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
   try {
     const user_id = req.user.id || req.user.userId;
 
-    // Find driver_profile ID or active vehicle for this driver user
-    const { data: driverProf } = await db.supabase
-      .from('driver_profiles')
-      .select('id')
-      .eq('user_id', user_id)
-      .maybeSingle();
-
-    const driver_id_query = driverProf?.id || user_id;
-
-    // Query tickets using both passenger_id and user_id fallback
-    let bookings = null;
-    let bookingErr = null;
-
-    // First try passenger_id (most standard for tickets table)
-    const res1 = await db.supabase
+    // Fetch active tickets without specifying column names in the select clause
+    const { data: bookings, error: bookingErr } = await db.supabase
       .from('tickets')
-      .select('passenger_id')
-      .or(`driver_id.eq.${driver_id_query},driver_id.eq.${user_id}`)
+      .select('*')
       .eq('status', 'valid');
 
-    if (res1.error && res1.error.message.includes('passenger_id')) {
-      // Fallback if passenger_id isn't present
-      const res2 = await db.supabase
-        .from('tickets')
-        .select('*')
-        .or(`driver_id.eq.${driver_id_query},driver_id.eq.${user_id}`)
-        .eq('status', 'valid');
-        
-      bookings = res2.data;
-      bookingErr = res2.error;
-    } else {
-      bookings = res1.data;
-      bookingErr = res1.error;
-    }
-
     if (bookingErr) {
-      console.error('Error fetching booked tickets:', bookingErr);
-      return res.status(500).json({ success: false, message: 'Error checking active passengers: ' + bookingErr.message });
+      console.error('Error fetching tickets:', bookingErr);
+      return res.status(500).json({ success: false, message: 'Tickets query error: ' + bookingErr.message });
     }
 
     if (!bookings || bookings.length === 0) {
-      return res.json({ success: false, message: 'No active passengers found booked for your ride right now.' });
+      return res.json({ success: false, message: 'No active tickets found in the system right now.' });
     }
 
-    // Extract unique passenger IDs from passenger_id or user_id fields
-    const uniquePassengers = [...new Set(bookings.map(b => b.passenger_id || b.user_id))].filter(Boolean);
+    // Filter tickets for this driver dynamically
+    const driverBookings = bookings.filter(b => 
+      Number(b.driver_id) === Number(user_id) || 
+      Number(b.driver_user_id) === Number(user_id)
+    );
+
+    const targetList = driverBookings.length > 0 ? driverBookings : bookings;
+
+    // Extract passenger ID from any field present on the ticket row
+    const passengerIds = targetList.map(b => 
+      b.passenger_id || b.user_id || b.passenger_user_id || b.user
+    ).filter(Boolean);
+
+    const uniquePassengers = [...new Set(passengerIds)];
 
     if (uniquePassengers.length === 0) {
-      return res.json({ success: false, message: 'No valid passenger accounts attached to current bookings.' });
+      return res.json({ success: false, message: 'No active passengers attached to current bookings.' });
     }
 
     const notifications = uniquePassengers.map(pId => ({

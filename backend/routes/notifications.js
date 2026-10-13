@@ -3,6 +3,9 @@ const router = express.Router();
 const db = require('../db'); 
 const jwt = require('jsonwebtoken');
 
+const JWT_SECRET = 'abu_ride_secret_key_change_later';
+
+// Helper middleware: Verify custom app JWT token using the correct project secret
 const verifyToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -11,10 +14,9 @@ const verifyToken = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const secret = process.env.JWT_SECRET || 'your-secret-key';
-    const decoded = jwt.verify(token, secret);
+    const decoded = jwt.verify(token, JWT_SECRET);
 
-    req.user = decoded; 
+    req.user = decoded; // Contains id, role, is_approved
     next();
   } catch (err) {
     console.error('Token verification error:', err.message);
@@ -22,10 +24,11 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+// 1. POST: Submit an issue report to admin
 router.post('/reports', verifyToken, async (req, res) => {
   try {
     const { role, issue_type, description } = req.body;
-    const reporter_id = req.user.userId || req.user.id;
+    const reporter_id = req.user.id || req.user.userId;
 
     if (!reporter_id) {
       return res.status(400).json({ success: false, message: 'User ID missing from token payload' });
@@ -44,9 +47,10 @@ router.post('/reports', verifyToken, async (req, res) => {
   }
 });
 
+// 2. GET: Fetch unread notifications for a user
 router.get('/unread', verifyToken, async (req, res) => {
   try {
-    const user_id = req.user.userId || req.user.id;
+    const user_id = req.user.id || req.user.userId;
 
     const { data, error } = await db.supabase
       .from('notifications')
@@ -64,9 +68,10 @@ router.get('/unread', verifyToken, async (req, res) => {
   }
 });
 
+// 3. POST: Driver triggers "Be at boarding point in 10 mins" alert
 router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
   try {
-    const driver_id = req.user.userId || req.user.id;
+    const driver_id = req.user.id || req.user.userId;
     
     const { data: bookings, error: bookingErr } = await db.supabase
       .from('tickets')

@@ -340,7 +340,7 @@ router.get('/trips', authMiddleware, driverOnly, async (req, res) => {
 });
 
 // ============================================================
-// GET DRIVER EARNINGS HISTORY
+// GET DRIVER EARNINGS HISTORY & SUMMARY
 // ============================================================
 
 router.get('/earnings', authMiddleware, driverOnly, async (req, res) => {
@@ -358,7 +358,26 @@ router.get('/earnings', authMiddleware, driverOnly, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Could not fetch earnings' });
     }
 
-    return res.json({ success: true, earnings: earnings || [] });
+    const earningsList = earnings || [];
+
+    let totalEarnings = 0;
+    let validatedTicketsCount = 0;
+
+    earningsList.forEach((item) => {
+      if (item.status !== 'cancelled') {
+        totalEarnings += Number(item.amount) || 0;
+        validatedTicketsCount += 1;
+      }
+    });
+
+    return res.json({
+      success: true,
+      summary: {
+        total_earnings: totalEarnings,
+        total_validated_tickets: validatedTicketsCount,
+      },
+      earnings: earningsList,
+    });
   } catch (error) {
     console.error('Driver earnings endpoint error:', error);
     return res.status(500).json({ success: false, message: 'Server error loading earnings' });

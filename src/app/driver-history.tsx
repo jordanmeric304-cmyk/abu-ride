@@ -2,13 +2,13 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 const API_URL = 'https://abu-ride.onrender.com';
@@ -60,8 +60,9 @@ export default function DriverHistoryScreen() {
       }
 
       const response = await fetch(
-        `${API_URL}/api/driver/history`,
-        {
+  `${API_URL}/api/driver/trips`,
+  {
+
           headers: {
             Authorization: `Bearer ${token}`,
           },

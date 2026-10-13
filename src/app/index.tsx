@@ -83,15 +83,8 @@ export default function HomeScreen() {
     loadUser();
     loadDestinations();
     loadWallet();
-
-    // Timed notification poller (runs every 30 seconds)
-    const notificationInterval = setInterval(() => {
-      checkPassengerNotifications();
-    }, 30000);
-
-    return () => clearInterval(notificationInterval);
   }, []);
-
+  
   const loadUser = async () => {
     try {
       const savedUser = await SecureStore.getItemAsync('user');
@@ -138,26 +131,7 @@ export default function HomeScreen() {
     }
   };
 
-  // --- TIMED NOTIFICATION CHECKER ---
-  const checkPassengerNotifications = async () => {
-    try {
-      const token = await SecureStore.getItemAsync('auth_token');
-      if (!token) return;
-
-      const response = await fetch(`${API_URL}/api/notifications/unread`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const data = await response.json();
-      if (data.success && data.notifications && data.notifications.length > 0) {
-        const latestNotif = data.notifications[0];
-        Alert.alert(latestNotif.title || 'Ride Update 🚗', latestNotif.message);
-      }
-    } catch (error) {
-      // Background check error ignored silently
-    }
-  };
-
+  
   const loadDrivers = async (destinationId: number) => {
     setLoadingDrivers(true);
     setSelectedDriver(null);

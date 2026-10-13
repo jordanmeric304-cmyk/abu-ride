@@ -45,6 +45,7 @@ type Vehicle = {
   vehicle_number: string;
   vehicle_type: string;
   is_active: boolean;
+  current_driver_id?: number;
 };
 
 export default function DriverDashboard() {
@@ -59,6 +60,7 @@ export default function DriverDashboard() {
   const [loading, setLoading] = useState(true);
   const [updatingAvailability, setUpdatingAvailability] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [notifyingPassengers, setNotifyingPassengers] = useState(false);
 
   const getToken = async () => {
     return await SecureStore.getItemAsync('auth_token');
@@ -243,6 +245,40 @@ export default function DriverDashboard() {
     }
   };
 
+  // --- NOTIFY PASSENGERS TRIGGER FUNCTION ---
+  const handleNotifyPassengers = async () => {
+    try {
+      setNotifyingPassengers(true);
+      const token = await getToken();
+
+      if (!token) {
+        router.replace('/login');
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/notifications/driver/notify-passengers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to notify passengers.');
+      }
+
+      Alert.alert('Success', data.message || 'Notification broadcasted to all passengers!');
+    } catch (error: any) {
+      console.error('Notify passengers error:', error);
+      Alert.alert('Broadcast Error', error.message || 'Could not notify passengers.');
+    } finally {
+      setNotifyingPassengers(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -373,6 +409,23 @@ export default function DriverDashboard() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* NOTIFY PASSENGERS BUTTON (10 MIN ALERT TRIGGER) */}
+        <TouchableOpacity
+          style={styles.notifyButton}
+          activeOpacity={0.85}
+          onPress={handleNotifyPassengers}
+          disabled={notifyingPassengers}
+        >
+          {notifyingPassengers ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <>
+              <Ionicons name="megaphone-outline" size={20} color={COLORS.white} />
+              <Text style={styles.notifyButtonText}>Notify Passengers (10 Mins) 📢</Text>
+            </>
+          )}
+        </TouchableOpacity>
 
         {/* VEHICLE SELECTION HEADER */}
         <View style={styles.routeSectionHeader}>
@@ -695,7 +748,7 @@ const styles = StyleSheet.create({
     padding: 19,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 29,
+    marginBottom: 15,
     shadowColor: '#163A28',
     shadowOpacity: 0.06,
     shadowRadius: 12,
@@ -757,6 +810,23 @@ const styles = StyleSheet.create({
   },
   availabilityButtonTextActive: {
     color: COLORS.primary,
+  },
+  notifyButton: {
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: '#0F5132',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 25,
+    borderWidth: 1,
+    borderColor: '#198754',
+  },
+  notifyButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '800',
   },
   routeSectionHeader: {
     marginBottom: 13,

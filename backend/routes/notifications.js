@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db'); // Matches your existing backend db configuration
-
+const db = require('../db'); 
 const jwt = require('jsonwebtoken');
 
 // Helper middleware: Verify custom app JWT token
@@ -13,9 +12,7 @@ const verifyToken = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    
-    // Verify using your backend JWT secret (or decode if secret isn't strict)
-    const secret = process.env.JWT_SECRET || 'your-secret-key'; // Match whatever secret your auth.js uses
+    const secret = process.env.JWT_SECRET || 'your-secret-key';
     const decoded = jwt.verify(token, secret);
 
     req.user = decoded; // Contains userId and role
@@ -30,7 +27,12 @@ const verifyToken = async (req, res, next) => {
 router.post('/reports', verifyToken, async (req, res) => {
   try {
     const { role, issue_type, description } = req.body;
-    const reporter_id = req.user.id;
+    // Support both userId and id from token payload
+    const reporter_id = req.user.userId || req.user.id;
+
+    if (!reporter_id) {
+      return res.status(400).json({ success: false, message: 'User ID missing from token payload' });
+    }
 
     const { error } = await db.supabase
       .from('reports')
@@ -48,7 +50,7 @@ router.post('/reports', verifyToken, async (req, res) => {
 // 2. GET: Fetch unread notifications for a user
 router.get('/unread', verifyToken, async (req, res) => {
   try {
-    const user_id = req.user.id;
+    const user_id = req.user.userId || req.user.id;
 
     const { data, error } = await db.supabase
       .from('notifications')
@@ -69,7 +71,7 @@ router.get('/unread', verifyToken, async (req, res) => {
 // 3. POST: Driver triggers "Be at boarding point in 10 mins" alert
 router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
   try {
-    const driver_id = req.user.id;
+    const driver_id = req.user.userId || req.user.id;
     
     const { data: bookings, error: bookingErr } = await db.supabase
       .from('tickets')

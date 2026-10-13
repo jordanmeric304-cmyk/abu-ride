@@ -314,16 +314,29 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
 });
 
 // ============================================================
-// GET DRIVER TRIP HISTORY
+// GET DRIVER TRIP HISTORY WITH JOINED DESTINATIONS
 // ============================================================
 
 router.get('/trips', authMiddleware, driverOnly, async (req, res) => {
   try {
     const driverId = req.user.id;
 
-    const { data: trips, error } = await supabase
+    const { data: rawTrips, error } = await supabase
       .from('trips')
-      .select('*')
+      .select(`
+        id,
+        status,
+        started_at,
+        completed_at,
+        created_at,
+        fare,
+        amount,
+        destination_id,
+        destinations:destination_id (
+          name,
+          fare
+        )
+      `)
       .eq('driver_id', driverId)
       .order('created_at', { ascending: false });
 
@@ -332,7 +345,22 @@ router.get('/trips', authMiddleware, driverOnly, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Could not fetch trip history' });
     }
 
-    return res.json({ success: true, trips: trips || [] });
+    const trips = (rawTrips || []).map(trip => {
+      const destName = trip.destinations?.name || trip.destination_name || 'Campus Ride';
+      const tripFare = Number(trip.fare) || Number(trip.amount) || Number(trip.destinations?.fare) || 0;
+
+      return {
+        id: trip.id,
+        status: trip.status || 'active',
+        started_at: trip.started_at,
+        completed_at: trip.completed_at,
+        created_at: trip.created_at,
+        destination_name: destName,
+        fare: tripFare
+      };
+    });
+
+    return res.json({ success: true, trips });
   } catch (error) {
     console.error('Driver trips endpoint error:', error);
     return res.status(500).json({ success: false, message: 'Server error loading trips' });

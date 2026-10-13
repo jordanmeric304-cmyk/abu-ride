@@ -51,41 +51,43 @@ export default function DriverHistoryScreen() {
     try {
       setLoading(true);
 
-      const token =
-        await SecureStore.getItemAsync('auth_token');
+      const token = await SecureStore.getItemAsync('auth_token');
 
       if (!token) {
         router.replace('/login');
         return;
       }
 
-      const response = await fetch(
-  `${API_URL}/api/driver/trips`,
-  {
-
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const response = await fetch(`${API_URL}/api/driver/trips`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
         Alert.alert(
           'Unable to Load History',
-          data.message ||
-            'Unable to load trip history.'
+          data.message || 'Unable to load trip history.'
         );
         return;
       }
 
-      setTrips(data.trips || []);
+      // Safely format trips and prevent NaN numerical bugs
+      const formattedTrips: Trip[] = (data.trips || []).map((trip: any) => ({
+        id: trip.id,
+        status: trip.status || 'active',
+        started_at: trip.started_at || null,
+        completed_at: trip.completed_at || null,
+        created_at: trip.created_at,
+        destination_name: trip.destination_name || trip.destination || 'Campus Trip',
+        fare: Number(trip.fare) || Number(trip.amount) || 0,
+      }));
+
+      setTrips(formattedTrips);
     } catch (error) {
-      console.log(
-        'Driver history error:',
-        error
-      );
+      console.log('Driver history error:', error);
 
       Alert.alert(
         'Connection Error',
@@ -105,8 +107,7 @@ export default function DriverHistoryScreen() {
   ).length;
 
   const totalFare = trips.reduce(
-    (total, trip) =>
-      total + Number(trip.fare || 0),
+    (total, trip) => total + (Number(trip.fare) || 0),
     0
   );
 
@@ -160,7 +161,7 @@ export default function DriverHistoryScreen() {
                 <Text style={styles.summaryTitle}>
                   Your Trips
                 </Text>
- </View>
+              </View>
 
               <View style={styles.summaryIcon}>
                 <Text style={styles.summaryIconText}>
@@ -304,9 +305,7 @@ export default function DriverHistoryScreen() {
 
                     <Text style={styles.fare}>
                       ₦
-                      {Number(
-                        trip.fare
-                      ).toLocaleString()}
+                      {(Number(trip.fare) || 0).toLocaleString()}
                     </Text>
                   </View>
 
@@ -442,12 +441,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  summarySubtitle: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 12,
-    marginTop: 4,
-  },
-
   summaryIcon: {
     width: 42,
     height: 42,
@@ -574,21 +567,6 @@ const styles = StyleSheet.create({
   tripTop: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-
-  destinationIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 13,
-    backgroundColor: colors.lightGreen,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  destinationIconText: {
-    color: colors.primary,
-    fontSize: 22,
-    fontWeight: '900',
   },
 
   destinationInfo: {

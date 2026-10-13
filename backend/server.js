@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-  const express = require('express');
+const express = require('express');
 const cors = require('cors');
 
 const db = require('./db');
@@ -9,6 +9,7 @@ const walletRoutes = require('./routes/wallet');
 const ticketRoutes = require('./routes/tickets');
 const adminRoutes = require('./routes/admin');
 const driverRoutes = require('./routes/driver');
+const notificationRoutes = require('./routes/notifications'); // <-- Added notifications require
 
 const app = express();
 
@@ -90,6 +91,11 @@ app.use('/api/admin', adminRoutes);
   Driver routes
 */
 app.use('/api/driver', driverRoutes);
+
+/*
+  Notification & Report routes
+*/
+app.use('/api/notifications', notificationRoutes); // <-- Added notification route mount
 
 const PORT = 5000;
 

@@ -24,34 +24,35 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+// 1. POST: Submit an issue report (Passenger or Driver)
 const handleReportSubmission = async (req, res) => {
   try {
-    const { role, issue_type, description, message, title, subject } = req.body;
+    const { role, issue_type, description, message, details, title, subject } = req.body;
     const reporter_id = req.user.id || req.user.userId;
 
     if (!reporter_id) {
       return res.status(400).json({ success: false, message: 'User ID missing from token payload' });
     }
 
-    const reportMessage = description || message || req.body.details || 'No description provided';
+    // Safely extract the issue message from whatever key the passenger frontend sent
+    const reportText = description || message || details || 'No details provided';
     const reportType = issue_type || title || subject || 'General Issue';
+    const userRole = role || req.user.role || 'passenger';
 
+    // CRITICAL: Insert ONLY into existing columns in the Supabase 'reports' table:
+    // (reporter_id, role, issue_type, description)
     const { error } = await db.supabase
       .from('reports')
       .insert([{ 
-        reporter_id, 
-        user_id: reporter_id,
-        role: role || req.user.role || 'user', 
+        reporter_id: reporter_id, 
+        role: userRole, 
         issue_type: reportType, 
-        description: reportMessage,
-        message: reportMessage,
-        title: reportType,
-        status: 'pending'
+        description: reportText 
       }]);
 
     if (error) {
       console.error('Supabase report insert error:', error);
-      throw error;
+      return res.status(400).json({ success: false, message: error.message });
     }
 
     return res.json({ success: true, message: 'Report submitted successfully to admin.' });
@@ -61,7 +62,7 @@ const handleReportSubmission = async (req, res) => {
   }
 };
 
-// 1. POST: Submit an issue report (supports both /reports and root)
+// Route handlers for report submission (supports both /reports and root)
 router.post('/reports', verifyToken, handleReportSubmission);
 router.post('/', verifyToken, handleReportSubmission);
 

@@ -3,7 +3,6 @@ const router = express.Router();
 const db = require('../db'); 
 const jwt = require('jsonwebtoken');
 
-// Helper middleware: Verify custom app JWT token
 const verifyToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -15,7 +14,7 @@ const verifyToken = async (req, res, next) => {
     const secret = process.env.JWT_SECRET || 'your-secret-key';
     const decoded = jwt.verify(token, secret);
 
-    req.user = decoded; // Contains userId and role
+    req.user = decoded; 
     next();
   } catch (err) {
     console.error('Token verification error:', err.message);
@@ -23,11 +22,9 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-// 1. POST: Submit an issue report to admin
 router.post('/reports', verifyToken, async (req, res) => {
   try {
     const { role, issue_type, description } = req.body;
-    // Support both userId and id from token payload
     const reporter_id = req.user.userId || req.user.id;
 
     if (!reporter_id) {
@@ -47,7 +44,6 @@ router.post('/reports', verifyToken, async (req, res) => {
   }
 });
 
-// 2. GET: Fetch unread notifications for a user
 router.get('/unread', verifyToken, async (req, res) => {
   try {
     const user_id = req.user.userId || req.user.id;
@@ -68,7 +64,6 @@ router.get('/unread', verifyToken, async (req, res) => {
   }
 });
 
-// 3. POST: Driver triggers "Be at boarding point in 10 mins" alert
 router.post('/driver/notify-passengers', verifyToken, async (req, res) => {
   try {
     const driver_id = req.user.userId || req.user.id;

@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Matches your existing backend db configuration
 
-// Helper middleware: Ensure user is authenticated safely
+const jwt = require('jsonwebtoken');
+
+// Helper middleware: Verify custom app JWT token
 const verifyToken = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -11,20 +13,16 @@ const verifyToken = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
+    
+    // Verify using your backend JWT secret (or decode if secret isn't strict)
+    const secret = process.env.JWT_SECRET || 'your-secret-key'; // Match whatever secret your auth.js uses
+    const decoded = jwt.verify(token, secret);
 
-    // Verify token using Supabase Auth
-    const { data: { user }, error } = await db.supabase.auth.getUser(token);
-
-    if (error || !user) {
-      console.error('Token verification error:', error?.message);
-      return res.status(401).json({ success: false, message: 'Invalid or expired token' });
-    }
-
-    req.user = user;
+    req.user = decoded; // Contains userId and role
     next();
   } catch (err) {
-    console.error('Auth middleware crash:', err);
-    return res.status(500).json({ success: false, message: 'Auth verification failed' });
+    console.error('Token verification error:', err.message);
+    return res.status(401).json({ success: false, message: 'Invalid or expired token' });
   }
 };
 

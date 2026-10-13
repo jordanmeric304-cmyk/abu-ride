@@ -67,7 +67,6 @@ export default function AdminScreen() {
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Manage Users</Text>
-            <Text style={styles.menuSubtitle}>View profiles, transactions & delete users</Text>
           </View>
           <Text style={styles.arrow}>›</Text>
         </TouchableOpacity>
@@ -83,26 +82,11 @@ export default function AdminScreen() {
           </View>
           <View style={styles.menuContent}>
             <Text style={styles.menuTitle}>Reports & Complaints</Text>
-            <Text style={styles.menuSubtitle}>Read passenger/driver reports and reply</Text>
           </View>
           <Text style={styles.arrow}>›</Text>
         </TouchableOpacity>
 
-        {/* FUNDING REQUESTS */}
-        <TouchableOpacity
-          style={styles.menuCard}
-          onPress={() => router.push('/admin-funding-requests')}
-          activeOpacity={0.85}
-        >
-          <View style={styles.iconBox}>
-            <Text style={styles.iconText}>₦</Text>
-          </View>
-          <View style={styles.menuContent}>
-            <Text style={styles.menuTitle}>Funding Requests</Text>
-          </View>
-          <Text style={styles.arrow}>›</Text>
-        </TouchableOpacity>
-
+   
         {/* DRIVER EARNINGS */}
         <TouchableOpacity
           style={styles.menuCard}

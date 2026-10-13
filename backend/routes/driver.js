@@ -125,7 +125,7 @@ router.get('/availability', authMiddleware, driverOnly, async (req, res) => {
 });
 
 // ============================================================
-// UPDATE DRIVER AVAILABILITY (Fixed Crash)
+// UPDATE DRIVER AVAILABILITY
 // ============================================================
 
 router.post('/availability', authMiddleware, driverOnly, async (req, res) => {
@@ -161,7 +161,6 @@ router.post('/availability', authMiddleware, driverOnly, async (req, res) => {
       return res.status(500).json({ success: false, message: 'Could not update driver availability' });
     }
 
-    // Also update vehicle active status if going offline
     if (is_available === false) {
       await supabase
         .from('vehicles')
@@ -180,7 +179,7 @@ router.post('/availability', authMiddleware, driverOnly, async (req, res) => {
 });
 
 // ============================================================
-// GET ALL VEHICLES (01 to 20) FOR DRIVER SELECTION
+// GET ALL VEHICLES FOR DRIVER SELECTION
 // ============================================================
 
 router.get('/vehicles', authMiddleware, driverOnly, async (req, res) => {
@@ -203,7 +202,7 @@ router.get('/vehicles', authMiddleware, driverOnly, async (req, res) => {
 });
 
 // ============================================================
-// DRIVER SELECTS A VEHICLE (01 to 20)
+// DRIVER SELECTS A VEHICLE
 // ============================================================
 
 router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
@@ -215,7 +214,6 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Vehicle ID is required' });
     }
 
-    // Unassign driver from any other vehicle first to prevent duplicates
     await supabase
       .from('vehicles')
       .update({ current_driver_id: null, is_active: false })
@@ -249,14 +247,13 @@ router.post('/select-vehicle', authMiddleware, driverOnly, async (req, res) => {
 });
 
 // ============================================================
-// GET ACTIVE VEHICLES FOR PASSENGERS (Failsafe & Flexible)
+// GET ACTIVE VEHICLES FOR PASSENGERS
 // ============================================================
 
 router.get('/active-vehicles', authMiddleware, async (req, res) => {
   try {
     const { destination_id } = req.query;
 
-    // 1. Fetch all driver profiles who are currently available
     let driverQuery = supabase
       .from('driver_profiles')
       .select('user_id, destination_id, is_available, vehicle_number')
@@ -279,34 +276,28 @@ router.get('/active-vehicles', authMiddleware, async (req, res) => {
 
     const driverIds = availableDrivers.map(d => d.user_id);
 
-    // 2. Fetch driver user details (names/usernames)
     const { data: users } = await supabase
       .from('users')
       .select('id, full_name, email, username')
       .in('id', driverIds);
 
-    // 3. Fetch active vehicle assignments from vehicles table
     const { data: vehicles } = await supabase
       .from('vehicles')
       .select('*')
       .in('current_driver_id', driverIds);
 
-    // Inside /active-vehicles endpoint:
-const result = availableDrivers.map(profile => {
+    const result = availableDrivers.map(profile => {
       const user = (users || []).find(u => u.id === profile.user_id);
       const vehicle = (vehicles || []).find(v => v.current_driver_id === profile.user_id);
 
-      // Prioritize username -> email prefix -> driver fallback
       const username = user?.username || user?.email?.split('@')[0] || 'driver';
-      
-      // Grab exact vehicle number selected by driver (e.g. "01", "02")
       const vehicleNumber = vehicle?.vehicle_number || profile.vehicle_number || '01';
 
       return {
         id: vehicle?.id || profile.user_id,
         driver_id: profile.user_id,
         vehicle_id: vehicle?.id,
-        driver_name: username, // Sent to frontend as clean username
+        driver_name: username,
         username: username,
         vehicle_number: vehicleNumber,
         is_available: true,
@@ -319,6 +310,58 @@ const result = availableDrivers.map(profile => {
   } catch (error) {
     console.error('Active vehicles endpoint error:', error);
     return res.status(500).json({ success: false, message: 'Server error while fetching active vehicles' });
+  }
+});
+
+// ============================================================
+// GET DRIVER TRIP HISTORY
+// ============================================================
+
+router.get('/trips', authMiddleware, driverOnly, async (req, res) => {
+  try {
+    const driverId = req.user.id;
+
+    const { data: trips, error } = await supabase
+      .from('trips')
+      .select('*')
+      .eq('driver_id', driverId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch driver trips error:', error);
+      return res.status(400).json({ success: false, message: 'Could not fetch trip history' });
+    }
+
+    return res.json({ success: true, trips: trips || [] });
+  } catch (error) {
+    console.error('Driver trips endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error loading trips' });
+  }
+});
+
+// ============================================================
+// GET DRIVER EARNINGS HISTORY
+// ============================================================
+
+router.get('/earnings', authMiddleware, driverOnly, async (req, res) => {
+  try {
+    const driverId = req.user.id;
+
+    const { data: earnings, error } = await supabase
+      .from('driver_earnings')
+      .select('*')
+      .eq('driver_id', driverId)
+      .order('earned_at', { ascending: false });
+
+    if (error) {
+      console.error('Fetch driver earnings error:', error);
+      return res.status(400).json({ success: false, message: 'Could not fetch earnings' });
+    }
+
+    return res.json({ success: true, earnings: earnings || [] });
+  } catch (error) {
+    console.error('Driver earnings endpoint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error loading earnings' });
   }
 });
 

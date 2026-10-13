@@ -73,10 +73,23 @@ export default function HomeScreen() {
   const [transferNote, setTransferNote] = useState('');
   const [transferring, setTransferring] = useState(false);
 
+  // --- REPORT MODAL STATE ---
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportIssueType, setReportIssueType] = useState('Delay / Boarding Issue');
+  const [reportDescription, setReportDescription] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
+
   useEffect(() => {
     loadUser();
     loadDestinations();
     loadWallet();
+
+    // Timed notification poller (runs every 30 seconds)
+    const notificationInterval = setInterval(() => {
+      checkPassengerNotifications();
+    }, 30000);
+
+    return () => clearInterval(notificationInterval);
   }, []);
 
   const loadUser = async () => {
@@ -125,6 +138,26 @@ export default function HomeScreen() {
     }
   };
 
+  // --- TIMED NOTIFICATION CHECKER ---
+  const checkPassengerNotifications = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('auth_token');
+      if (!token) return;
+
+      const response = await fetch(`${API_URL}/api/notifications/unread`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+      if (data.success && data.notifications && data.notifications.length > 0) {
+        const latestNotif = data.notifications[0];
+        Alert.alert(latestNotif.title || 'Ride Update 🚗', latestNotif.message);
+      }
+    } catch (error) {
+      // Background check error ignored silently
+    }
+  };
+
   const loadDrivers = async (destinationId: number) => {
     setLoadingDrivers(true);
     setSelectedDriver(null);
@@ -142,11 +175,21 @@ export default function HomeScreen() {
 
       const data = await response.json();
 
-if (data.success && data.vehicles) {
+      if (data.success && data.vehicles) {
         const mapped = data.vehicles.map((v: any) => {
           const rawName = v.driver_name || v.username || 'driver';
           const cleanUsername = rawName.startsWith('@') ? rawName.slice(1) : rawName;
           const vehNo = v.vehicle_number || (v.vehicle_id ? `Vehicle ${v.vehicle_id}` : 'Unassigned');
+          const availSeats = v.available_seats ?? 10;
+          const bookedSeats = 10 - availSeats;
+
+          // Check for 8-Seat Threshold alert
+          if (bookedSeats >= 8) {
+            Alert.alert(
+              'Boarding Urgent! 🏃‍♂️',
+              `Vehicle ${vehNo} serving ${selectedDestination?.name || 'your destination'} now has ${bookedSeats} seats booked! Please make your way to the boarding point immediately.`
+            );
+          }
 
           return {
             id: v.driver_id || v.vehicle_id,
@@ -161,7 +204,7 @@ if (data.success && data.vehicles) {
             destination_id: destinationId,
             destination_name: selectedDestination?.name || '',
             fare: selectedDestination?.fare || 0,
-            available_seats: v.available_seats ?? 10,
+            available_seats: availSeats,
           };
         });
 
@@ -382,6 +425,47 @@ if (data.success && data.vehicles) {
     }
   };
 
+  // --- SUBMIT REPORT FUNCTION ---
+  const submitIssueReport = async () => {
+    if (!reportDescription.trim()) {
+      Alert.alert('Error', 'Please describe the issue in detail.');
+      return;
+    }
+
+    try {
+      setSubmittingReport(true);
+      const token = await SecureStore.getItemAsync('auth_token');
+
+      const response = await fetch(`${API_URL}/api/notifications/reports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          role: 'passenger',
+          issue_type: reportIssueType,
+          description: reportDescription,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        Alert.alert('Report Submitted', 'Your issue report has been logged to the admin team.');
+        setReportDescription('');
+        setReportModalVisible(false);
+      } else {
+        Alert.alert('Error', data.message || 'Failed to submit report.');
+      }
+    } catch (error) {
+      console.log('Report error:', error);
+      Alert.alert('Connection Error', 'Unable to connect to the ABU Ride server.');
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -537,7 +621,7 @@ if (data.success && data.vehicles) {
 
                 <View style={styles.driverInfo}>
                   <Text style={styles.driverName}>
-                    {driver.vehicle_number ? `${driver.vehicle_number} • ` : ''}
+                    {driver.vehicle_number ? `${driver.vehicle_number} ` : ''}
                     @{driver.username}
                   </Text>
 
@@ -571,7 +655,7 @@ if (data.success && data.vehicles) {
             </Text>
 
             <Text style={styles.selectedDriverName}>
-              {selectedDriver.vehicle_number ? `${selectedDriver.vehicle_number} • ` : ''}
+              {selectedDriver.vehicle_number ? `${selectedDriver.vehicle_number} ` : ''}
               @{selectedDriver.username}
             </Text>
 
@@ -631,6 +715,16 @@ if (data.success && data.vehicles) {
             <Text style={styles.quickTitle}>Transactions</Text>
             <Text style={styles.quickText}>
               View wallet transactions
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.quickCard, styles.reportQuickCard]}
+            onPress={() => setReportModalVisible(true)}
+          >
+            <Text style={styles.reportQuickTitle}>Report Issue ⚠️</Text>
+            <Text style={styles.quickText}>
+              Log complaints to admin
             </Text>
           </Pressable>
         </View>
@@ -743,6 +837,61 @@ if (data.success && data.vehicles) {
               >
                 <Text style={styles.submitText}>
                   {transferring ? 'Transferring...' : 'Transfer'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* REPORT ISSUE MODAL */}
+      <Modal
+        visible={reportModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReportModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Report an Issue ⚠️</Text>
+            <Text style={styles.modalText}>
+              Report delays, misconduct, or app bugs directly to the ABU Ride admin.
+            </Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Issue Category e.g. Delay, Misconduct"
+              value={reportIssueType}
+              onChangeText={setReportIssueType}
+            />
+
+            <TextInput
+              style={[styles.input, styles.noteInput]}
+              placeholder="Describe what happened..."
+              value={reportDescription}
+              onChangeText={setReportDescription}
+              multiline
+            />
+
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={styles.cancelButton}
+                onPress={() => setReportModalVisible(false)}
+                disabled={submittingReport}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.reportSubmitButton,
+                  submittingReport && styles.disabledButton,
+                ]}
+                onPress={submitIssueReport}
+                disabled={submittingReport}
+              >
+                <Text style={styles.submitText}>
+                  {submittingReport ? 'Submitting...' : 'Submit Report'}
                 </Text>
               </Pressable>
             </View>
@@ -1082,26 +1231,35 @@ const styles = StyleSheet.create({
   },
   quickAccess: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   quickCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#DCE7E0',
   },
   quickTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: '#176B45',
   },
+  reportQuickCard: {
+    borderColor: '#F5C6CB',
+    backgroundColor: '#FFF5F5',
+  },
+  reportQuickTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#D9534F',
+  },
   quickText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6B756F',
     marginTop: 5,
-    lineHeight: 18,
+    lineHeight: 16,
   },
   modalOverlay: {
     flex: 1,
@@ -1166,6 +1324,13 @@ const styles = StyleSheet.create({
   submitButton: {
     flex: 1,
     backgroundColor: '#176B45',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  reportSubmitButton: {
+    flex: 1,
+    backgroundColor: '#D9534F',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
